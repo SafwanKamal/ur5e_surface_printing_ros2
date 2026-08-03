@@ -5,7 +5,6 @@
 
 #include <moveit/move_group_interface/move_group_interface.hpp>
 #include <moveit/robot_state/robot_state.hpp>
-
 #include <moveit_msgs/msg/display_trajectory.hpp>
 #include <moveit_msgs/msg/robot_trajectory.hpp>
 
@@ -38,14 +37,12 @@ namespace
 constexpr double kMillimetersToMeters = 0.001;
 constexpr double kPi = 3.14159265358979323846;
 
-
 struct CsvToolpathPoint
 {
   int line_id;
   int point_index;
   geometry_msgs::msg::Pose object_pose;
 };
-
 
 std::vector<std::string> splitCsvLine(
   const std::string& line)
@@ -62,12 +59,10 @@ std::vector<std::string> splitCsvLine(
   return values;
 }
 
-
 double degreesToRadians(double degrees)
 {
   return degrees * kPi / 180.0;
 }
-
 
 double durationToSeconds(
   const builtin_interfaces::msg::Duration& duration)
@@ -76,7 +71,6 @@ double durationToSeconds(
     static_cast<double>(duration.sec) +
     static_cast<double>(duration.nanosec) * 1e-9;
 }
-
 
 geometry_msgs::msg::Pose transformToPose(
   const tf2::Transform& transform)
@@ -102,7 +96,6 @@ geometry_msgs::msg::Pose transformToPose(
 
   return pose;
 }
-
 
 std::map<int, std::vector<CsvToolpathPoint>>
 loadToolpathCsv(const std::string& csv_path)
@@ -284,7 +277,6 @@ loadToolpathCsv(const std::string& csv_path)
   return points_by_line;
 }
 
-
 std::vector<geometry_msgs::msg::Pose>
 transformLineToWorld(
   const std::vector<CsvToolpathPoint>& points,
@@ -322,7 +314,6 @@ transformLineToWorld(
 
   return world_poses;
 }
-
 
 std::shared_ptr<moveit::core::RobotState>
 trajectoryEndState(
@@ -376,7 +367,6 @@ trajectoryEndState(
   return state;
 }
 
-
 void printPose(
   const rclcpp::Logger& logger,
   const std::string& label,
@@ -399,7 +389,6 @@ void printPose(
     pose.orientation.z,
     pose.orientation.w);
 }
-
 
 bool validateTrajectorySegment(
   const rclcpp::Logger& logger,
@@ -622,6 +611,24 @@ bool validateTrajectorySegment(
     durationToSeconds(
       points.back().time_from_start);
 
+  /*
+   * MoveIt can return a trajectory containing one point at time zero
+   * when the robot is already at the requested target. This is a
+   * valid no-op transition, not an invalid trajectory.
+   */
+  if (
+    points.size() == 1 &&
+    duration <= 0.0)
+  {
+    RCLCPP_INFO(
+      logger,
+      "Segment %zu is a one-point no-op trajectory; "
+      "the robot is already at this segment's target",
+      segment_index);
+
+    return true;
+  }
+
   if (duration <= 0.0)
   {
     RCLCPP_ERROR(
@@ -694,7 +701,6 @@ bool validateTrajectorySegment(
 
   return true;
 }
-
 
 bool validateSegmentBoundary(
   const rclcpp::Logger& logger,
@@ -795,7 +801,6 @@ bool validateSegmentBoundary(
 }
 
 }  // namespace
-
 
 int main(int argc, char* argv[])
 {
@@ -922,6 +927,11 @@ int main(int argc, char* argv[])
         "execute",
         false);
 
+    /*
+     * This parameter name is retained for compatibility with the
+     * existing command. It is currently acting as an explicit
+     * execution-confirmation guard.
+     */
     const bool confirm_mock_hardware =
       node->declare_parameter<bool>(
         "confirm_mock_hardware",
@@ -1017,8 +1027,8 @@ int main(int argc, char* argv[])
     {
       throw std::runtime_error(
         "Execution requested, but confirm_mock_hardware "
-        "is false. Confirm that the mock-hardware launch "
-        "is running before enabling execution.");
+        "is false. Set it to true only after confirming "
+        "that execution is safe.");
     }
 
     std::map<int, std::vector<CsvToolpathPoint>>
@@ -1100,7 +1110,6 @@ int main(int argc, char* argv[])
 
     move_group.setEndEffectorLink(tcp_link);
     move_group.setPoseReferenceFrame(planning_frame);
-
     move_group.setPlanningTime(planning_time);
 
     move_group.setNumPlanningAttempts(
@@ -1448,7 +1457,7 @@ int main(int argc, char* argv[])
 
     RCLCPP_WARN(
       logger,
-      "MOCK EXECUTION ENABLED");
+      "PHYSICAL EXECUTION ENABLED");
 
     RCLCPP_WARN(
       logger,
@@ -1461,6 +1470,37 @@ int main(int argc, char* argv[])
         display_trajectory.trajectory.size();
       ++segment_index)
     {
+      const auto& segment =
+        display_trajectory.trajectory[
+          segment_index];
+
+      const auto& segment_points =
+        segment.joint_trajectory.points;
+
+      const double segment_duration =
+        segment_points.empty()
+        ? 0.0
+        : durationToSeconds(
+            segment_points.back().time_from_start);
+
+      /*
+       * Do not submit a one-point, zero-duration trajectory to
+       * the controller. It only means the robot is already at
+       * that segment's target.
+       */
+      if (
+        segment_points.size() == 1 &&
+        segment_duration <= 0.0)
+      {
+        RCLCPP_INFO(
+          logger,
+          "Skipping segment %zu because it is a "
+          "one-point no-op trajectory",
+          segment_index);
+
+        continue;
+      }
+
       const bool is_transition =
         segment_index % 2 == 0;
 
@@ -1474,9 +1514,7 @@ int main(int argc, char* argv[])
           : "Cartesian surface trace");
 
       const auto execution_result =
-        move_group.execute(
-          display_trajectory.trajectory[
-            segment_index]);
+        move_group.execute(segment);
 
       if (
         execution_result !=
@@ -1502,7 +1540,7 @@ int main(int argc, char* argv[])
 
     RCLCPP_INFO(
       logger,
-      "All mock trajectory segments executed successfully");
+      "All trajectory segments executed successfully");
   }
   catch (const std::exception& error)
   {
