@@ -1,0 +1,15 @@
+syringe_serial_node:
+  ros__parameters:
+    port: /dev/ttyACM0
+    baud_rate: 115200
+
+    startup_timeout_sec: 5.0
+    ack_timeout_sec: 1.0
+    move_timeout_margin_sec: 3.0
+    heartbeat_period_sec: 0.2
+
+    maximum_step_rate_hz: 5000.0
+
+    pulses_per_ml: 555.555556
+    pulses_per_mm: 203.006329
+    extrusion_direction: -1

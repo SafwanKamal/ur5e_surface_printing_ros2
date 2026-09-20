@@ -1,0 +1,10 @@
+bool enabled
+
+# Positive magnitude. Ignored when disabled.
+float64 flow_ml_per_min
+bool retract
+---
+bool success
+string message
+float64 effective_flow_ml_per_min
+float64 step_rate_hz

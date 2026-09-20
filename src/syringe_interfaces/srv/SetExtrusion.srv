@@ -1,0 +1,6 @@
+bool enabled
+int32 direction
+float64 step_rate_hz
+---
+bool success
+string message

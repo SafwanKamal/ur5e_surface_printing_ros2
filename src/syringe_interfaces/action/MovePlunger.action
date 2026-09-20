@@ -1,0 +1,8 @@
+int32 steps
+float64 step_rate_hz
+---
+bool success
+int32 steps_completed
+string message
+---
+int32 steps_completed

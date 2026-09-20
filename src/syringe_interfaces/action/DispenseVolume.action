@@ -1,0 +1,18 @@
+# Positive volume dispenses; negative volume retracts.
+float64 volume_ml
+
+# Positive magnitude for either direction.
+float64 flow_ml_per_min
+---
+bool success
+int32 commanded_steps
+int32 steps_completed
+
+# Signed nominal displacement, not measured liquid delivery.
+float64 estimated_volume_ml
+float64 effective_flow_ml_per_min
+string message
+---
+int32 steps_completed
+float64 estimated_volume_ml
+float64 effective_flow_ml_per_min
