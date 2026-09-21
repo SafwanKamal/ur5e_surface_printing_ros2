@@ -1,3 +1,5 @@
+> **Syringe demo branch:** Start with [DEMO_RUNBOOK.md](docs/DEMO_RUNBOOK.md). It supersedes older syringe execution examples below and includes calibration, rehearsal, printing and stop/recovery commands.
+
 # UR5e Surface Printing ROS 2
 
 > ROS 2 Jazzy + MoveIt 2 research workspace for curved-surface path generation, UR5e planning, custom tool integration, RealSense point-cloud processing, RViz visualization, mock execution, and physical-robot bring-up.
