@@ -29,6 +29,7 @@ from rclpy.qos import (
 from rosidl_runtime_py.convert import message_to_ordereddict
 
 from .common import WorkNode, validate_trajectory
+from .demo_safety import live_model
 
 
 def read_waypoints(path, line_id):
@@ -160,6 +161,10 @@ def run(node):
             "(must be <= 0.01 m)"
         )
 
+    speed_mm_s = float(node.parameter("cartesian_speed_mm_s", 2.0))
+    if not math.isfinite(speed_mm_s) or not 0.1 <= speed_mm_s <= 10:
+        raise ValueError("Demo cartesian_speed_mm_s must be 0.1..10")
+    _, model_hash = live_model(node)
     poses = read_waypoints(
         csv_path,
         line_id,
@@ -243,6 +248,10 @@ def run(node):
     request.waypoints = poses
 
     request.max_step = step
+    if not hasattr(request, "max_cartesian_speed"):
+        raise RuntimeError("Installed moveit_msgs lacks Cartesian speed limiting; update Jazzy MoveIt")
+    request.cartesian_speed_limited_link = link
+    request.max_cartesian_speed = speed_mm_s / 1000.0
     request.avoid_collisions = True
 
     request.revolute_jump_threshold = 0.25
@@ -297,7 +306,11 @@ def run(node):
         )
 
     data = {
-        "schema": "surface_print_plan_v1",
+        "schema": "surface_print_plan_v2",
+        "model_sha256": model_hash,
+        "group_name": group,
+        "cartesian_speed_mm_s": speed_mm_s,
+        "source_csv": str(Path(csv_path).resolve()),
         "frame_id": frame,
         "link_name": link,
         "line_id": line_id,
@@ -307,6 +320,7 @@ def run(node):
         "start_state": plain(response.start_state),
     }
 
+    Path(output).parent.mkdir(parents=True, exist_ok=True)
     Path(output).write_text(
         yaml.safe_dump(
             data,

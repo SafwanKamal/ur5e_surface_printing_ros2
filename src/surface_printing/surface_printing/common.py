@@ -97,6 +97,7 @@ def validate_trajectory(trajectory):
         )
 
     previous_time = -1.0
+    previous_point = None
 
     for point in joint_trajectory.points:
         if len(point.positions) != len(names):
@@ -120,6 +121,8 @@ def validate_trajectory(trajectory):
                     "Nonfinite trajectory data"
                 )
 
+        if point.time_from_start.sec < 0 or not 0 <= point.time_from_start.nanosec < 1000000000:
+            raise ValueError("Invalid ROS duration")
         duration = (
             point.time_from_start.sec
             + point.time_from_start.nanosec * 1e-9
@@ -130,6 +133,14 @@ def validate_trajectory(trajectory):
                 "Trajectory timestamps must increase strictly"
             )
 
+        if previous_point is not None:
+            dt = duration - previous_time
+            if any(abs(a-b) > 0.25 or abs(a-b)/dt > 0.3
+                   for a,b in zip(point.positions,previous_point.positions)):
+                raise ValueError("Demo joint jump/speed limit exceeded (0.25 rad / 0.3 rad/s)")
+        if any(abs(v) > 0.3 for v in point.velocities):
+            raise ValueError("Demo joint velocity exceeds 0.3 rad/s")
+        previous_point = point
         previous_time = duration
 
     if previous_time <= 0:
