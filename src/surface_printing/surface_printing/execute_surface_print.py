@@ -151,7 +151,7 @@ def run(node):
         raise ValueError('Plan is older than 5 minutes or has an invalid timestamp; replan')
     trajectory=RobotTrajectory(); set_message_fields(trajectory,data['trajectory'])
     duration=validate_trajectory(trajectory)
-    node.wrist_bounds=load_bounds()
+    node.wrist_bounds=load_bounds(simulation=node.simulation)
     check_state(node.fresh_joints(), node.wrist_bounds)
     check_trajectory(trajectory, node.wrist_bounds)
     xml,model_hash=live_model(node)

@@ -2,7 +2,7 @@
 import math
 from pathlib import Path
 
-def load_bounds():
+def load_bounds(*, simulation=True):
     import yaml
     from ament_index_python.packages import get_package_share_directory
     path = Path(get_package_share_directory('ur5e_probe_moveit_config'))/'config/joint_limits.yaml'
@@ -10,8 +10,10 @@ def load_bounds():
     if entry.get('has_position_limits') is not True:
         raise ValueError('Wrist 3 position limits must be enabled')
     low, high = float(entry['min_position']), float(entry['max_position'])
-    if not all(math.isfinite(x) for x in (low, high)) or low >= high or high-low > math.radians(10)+1e-9:
-        raise ValueError('Demo Wrist 3 range must be finite, ordered and at most 10 degrees wide')
+    if not all(math.isfinite(x) for x in (low, high)) or low >= high or low < -math.pi or high > math.pi:
+        raise ValueError('Demo Wrist 3 range must be finite, ordered and within +/-180 degrees')
+    if not simulation and high-low > math.radians(10)+1e-9:
+        raise ValueError('Expanded Wrist 3 range is simulation-only; hardware clearance is not validated')
     return low, high
 
 def check_value(value, bounds):
