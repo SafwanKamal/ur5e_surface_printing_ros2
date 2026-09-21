@@ -15,8 +15,8 @@ watertight; it is used as a triangle collision surface, not as a measured solid.
 The mesh translation [0,-1.0794,-0.227868] meters and mounting rotation about Y
 are inherited from the old probe as a STARTING GUESS, based on shared CAD offsets.
 They must be checked against the actual flange and mounting bracket. No nozzle
-position is inferred from a bounding-box extreme. The TCP defaults to zero and
-is intentionally unusable until configured. The STL only represents one plunger
+position is inferred from a bounding-box extreme. The TCP now defaults to the visually identified CAD syringe outlet; it remains
+unverified against the physical mounting. The STL only represents one plunger
 position; account for its entire operating stroke and cables when checking space.
 
 ## Set up
@@ -47,3 +47,38 @@ The same installed configuration must be used by MoveIt and robot_state_publishe
 The executor checks live MoveIt TCP/mount/mesh transforms against that file and
 requires a new plan when the live robot model hash changes. It cannot certify
 that those values match the real hardware.
+
+## CAD outlet TCP and needle extension
+
+The orthographic STL inspection identifies the narrow cylindrical outlet above
+ the barrel, along CAD +Z. The terminal planar ring has 48 unique vertices, a
+4.10 mm outer diameter, and center [96.74983, 1081.40020, 325.88336] mm.
+This is the syringe outlet without a needle, not a measured physical calibration.
+With the current mesh placement its tool-frame position is
+[0.09674983, 0.00200020, 0.09801536] m. TCP +Z follows the outlet axis.
+The flange mounting transform is still provisional; keep calibrated=false until
+verified. The pump model remains disabled by default.
+
+To configure the needle, measure the actual outlet-to-tip extension when fitted
+(not the complete needle length including its overlapping hub). From the source
+repository root, preview a 25 mm extension:
+
+```bash
+python3 src/ur5e_toolheads/ur5e_toolheads/set_needle_tcp.py \
+  --config src/ur5e_toolheads/config/printing_tool.yaml \
+  --needle-length-mm 25
+```
+
+Add `--write` to apply. Use `--needle-length-mm 0 --write` for no needle.
+After building, `ros2 run ur5e_toolheads set_needle_tcp` accepts the same arguments.
+The script computes mesh_translation + mesh_rotation * (scaled_CAD_outlet +
+[0, 0, needle_length_m]); it handles rotated mesh axes and never accumulates offsets.
+It updates both tcp_xyz and tcp_rpy and resets calibrated=false. It does not change
+mounting, enable the pump, move the robot, or publish a competing TF.
+
+Stop execution before editing. Verify the model and physical tool, set calibration
+only after verification, rebuild ur5e_toolheads, and restart robot/MoveIt/RViz.
+Regenerate the path from the new tip and make a fresh plan. Updating a standalone
+TF during execution would leave MoveIt's kinematic model inconsistent.
+The added needle is not represented by collision geometry; allow physical clearance
+for its full length and diameter, including the hub. Update the pendant TCP separately.

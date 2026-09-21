@@ -38,6 +38,6 @@ setup(
     description='Custom UR5e tool-head descriptions',
     license='Apache-2.0',
     entry_points={
-        'console_scripts': [],
+        'console_scripts': ['set_needle_tcp = ur5e_toolheads.set_needle_tcp:main'],
     },
 )
