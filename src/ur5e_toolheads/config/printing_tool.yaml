@@ -1,0 +1,13 @@
+# Same file is loaded by robot_state_publisher, MoveIt and demo preflight.
+# Enable only after measuring flange-to-nozzle and checking RViz against hardware.
+enabled: false
+calibrated: false
+# Inferred shared CAD origin from old probe; NOT a verified mounting transform.
+mount_xyz: [0.0, 0.0, 0.0]
+mount_rpy: [0.0, 1.57079632679, 0.0]
+mesh_xyz: [0.0, -1.0794, -0.227868]
+mesh_rpy: [0.0, 0.0, 0.0]
+mesh_scale: [0.001, 0.001, 0.001]
+# Relative to probe_tool_link, meters/radians. Replace with measured nozzle TCP.
+tcp_xyz: [0.0, 0.0, 0.0]
+tcp_rpy: [0.0, 0.0, 0.0]
