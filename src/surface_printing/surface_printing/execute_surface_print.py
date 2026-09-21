@@ -16,7 +16,7 @@ from std_msgs.msg import Empty, Float64
 from std_srvs.srv import Trigger
 from syringe_interfaces.srv import SetFlow
 from std_msgs.msg import String
-from .common import WorkNode, validate_trajectory
+from .common import WorkNode, validate_trajectory, speed_scaling_fraction
 from .demo_geometry import validate_budget
 from .tcp_speed import verify as verify_tcp_speed
 from .wrist_guard import load_bounds, check_state, check_trajectory
@@ -68,8 +68,8 @@ class PrintNode(WorkNode):
             if now-self.joints_received>.5: raise RuntimeError('Robot joint feedback stale')
             if not self.simulation:
                 if now-self.scale_received>.5: raise RuntimeError('Robot speed-scaling feedback stale')
-                if (not math.isfinite(self.scale) or not 0<self.scale<=1 or
-                        abs(self.scale-self.baseline_scale)>0.02):
+                current_scale=speed_scaling_fraction(self.scale)
+                if abs(current_scale-self.baseline_scale)>0.02:
                     raise RuntimeError('Robot paused/stopped or speed scaling changed; aborting print')
             current=dict(zip(self.joints.name,self.joints.position))
             if any(n not in current or not math.isfinite(current[n]) for n in self.joint_names):
@@ -184,9 +184,7 @@ def run(node):
         while node.scale is None or time.monotonic()-node.scale_received>.5:
             if time.monotonic()>deadline: raise RuntimeError('No fresh UR speed scaling factor')
             rclpy.spin_once(node,timeout_sec=.02)
-        if not math.isfinite(node.scale) or not 0<node.scale<=1:
-            raise RuntimeError('UR speed scaling factor must be within (0,1]')
-        node.baseline_scale=node.scale
+        node.baseline_scale=speed_scaling_fraction(node.scale)
     actual_estimate=duration/(1. if node.simulation else node.baseline_scale)
     # Reserve stop latency in the volume budget (lease + firmware timeout).
     validate_budget(actual_estimate+3.,flow,max_seconds,node.max_volume)

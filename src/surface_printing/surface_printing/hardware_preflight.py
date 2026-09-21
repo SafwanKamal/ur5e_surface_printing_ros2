@@ -1,5 +1,4 @@
 """Read-only physical UR preflight. This node never commands robot motion."""
-import math
 import time
 
 import rclpy
@@ -8,7 +7,7 @@ from moveit_msgs.srv import GetStateValidity
 from rclpy.qos import qos_profile_sensor_data
 from std_msgs.msg import Float64
 
-from .common import WorkNode
+from .common import WorkNode, speed_scaling_fraction
 from .demo_safety import (calibrated_tool, live_model,
                           require_controller_mode, require_real_model)
 from .wrist_guard import check_state, load_bounds
@@ -52,11 +51,10 @@ def run(node):
         if time.monotonic()>deadline:
             raise RuntimeError('No fresh UR speed-scaling feedback')
         rclpy.spin_once(node,timeout_sec=0.05)
-    if not math.isfinite(node.scale) or not 0<node.scale<=1.0:
-        raise RuntimeError('UR speed scaling factor must be within (0,1]')
+    scale_fraction=speed_scaling_fraction(node.scale)
     node.get_logger().info(
         f'PREFLIGHT PASSED: real UR model, calibrated tool, real controller, '
-        f'fresh joints, collision-free state, speed scaling={node.scale*100:.1f}%')
+        f'fresh joints, collision-free state, speed scaling={scale_fraction*100:.1f}%')
     node.get_logger().info('No robot or pump motion was commanded')
 
 

@@ -9,6 +9,18 @@ from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import JointState
 
 
+def speed_scaling_fraction(value):
+    """Normalize UR driver scaling published as either 0..1 or 0..100."""
+    value = float(value)
+    if not math.isfinite(value) or value <= 0:
+        raise RuntimeError("UR speed scaling must be positive and finite")
+    if value <= 1.0:
+        return value
+    if value <= 100.0:
+        return value / 100.0
+    raise RuntimeError("UR speed scaling must be within (0,1] or (0,100]")
+
+
 class WorkNode(Node):
     def __init__(self, name):
         super().__init__(name)

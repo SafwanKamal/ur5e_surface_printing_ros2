@@ -29,9 +29,12 @@ def extract(filename, names, namespace):
     return namespace
 
 
+common = extract('common.py', ['validate_trajectory','speed_scaling_fraction'], {'math': math})
+validate = common['validate_trajectory']
+speed_scaling_fraction = common['speed_scaling_fraction']
 monitor = extract('execute_surface_print.py', ['PrintNode'],
-                  {'math': math, 'time': time, 'Empty': lambda: None})['PrintNode']
-validate = extract('common.py', ['validate_trajectory'], {'math': math})['validate_trajectory']
+                  {'math': math, 'time': time, 'Empty': lambda: None,
+                   'speed_scaling_fraction': speed_scaling_fraction})['PrintNode']
 
 
 class DemoSafety(unittest.TestCase):
@@ -60,9 +63,16 @@ class DemoSafety(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'speed-scaling feedback stale'): n.tick()
 
     def test_paused_and_changed_scaling(self):
-        for scale in [0, float('nan'), .25, 1.01]:
+        for scale in [0, float('nan'), .25, 25., 101.]:
             n = self.node(); n.scale = scale
-            with self.assertRaises(RuntimeError): n.tick()
+            if scale in (.25,25.):
+                with self.assertRaisesRegex(RuntimeError,'changed'): n.tick()
+            else:
+                with self.assertRaises(RuntimeError): n.tick()
+
+    def test_speed_scaling_driver_formats(self):
+        self.assertEqual(speed_scaling_fraction(.12),.12)
+        self.assertEqual(speed_scaling_fraction(12.),.12)
 
     def test_missing_and_invalid_joint(self):
         for names, positions in [([], []), (['a'], [float('nan')])]:
