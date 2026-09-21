@@ -41,11 +41,11 @@
         </link>
         <joint name="tool_to_sleeve_envelope" type="fixed">
           <parent link="probe_tool_link"/><child link="pump_sleeve_envelope"/>
-          <origin xyz="${'%s %s %s' % tuple(pump['mesh_xyz'])}" rpy="${'%s %s %s' % tuple(pump['mesh_rpy'])}"/>
+          <origin xyz="${'%s %s %s' % (pump['mesh_xyz'][0], pump['mesh_xyz'][1], pump['mesh_xyz'][2])}" rpy="${'%s %s %s' % (pump['mesh_rpy'][0], pump['mesh_rpy'][1], pump['mesh_rpy'][2])}"/>
         </joint>
         <joint name="tool_to_body_envelope" type="fixed">
           <parent link="probe_tool_link"/><child link="pump_body_envelope"/>
-          <origin xyz="${'%s %s %s' % tuple(pump['mesh_xyz'])}" rpy="${'%s %s %s' % tuple(pump['mesh_rpy'])}"/>
+          <origin xyz="${'%s %s %s' % (pump['mesh_xyz'][0], pump['mesh_xyz'][1], pump['mesh_xyz'][2])}" rpy="${'%s %s %s' % (pump['mesh_rpy'][0], pump['mesh_rpy'][1], pump['mesh_rpy'][2])}"/>
         </joint>
       </xacro:if>
       <joint name="flange_to_probe_tool" type="fixed">
