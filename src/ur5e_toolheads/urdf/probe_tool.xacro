@@ -35,8 +35,34 @@
         </link>
         <link name="pump_body_envelope">
           <collision>
-            <origin xyz="${84.12483*pump['mesh_scale'][0]} ${1081.41265*pump['mesh_scale'][1]} ${199.14168*pump['mesh_scale'][2]}"/>
-            <geometry><box size="${83.25*pump['mesh_scale'][0]} ${43.0251*pump['mesh_scale'][1]} ${254.48336*pump['mesh_scale'][2]}"/></geometry>
+            <!-- Main body stops before the narrow dispensing end. -->
+            <origin xyz="${84.12483*pump['mesh_scale'][0]} ${1081.41265*pump['mesh_scale'][1]} ${173.7*pump['mesh_scale'][2]}"/>
+            <geometry><box size="${83.25*pump['mesh_scale'][0]} ${43.0251*pump['mesh_scale'][1]} ${203.6*pump['mesh_scale'][2]}"/></geometry>
+          </collision>
+        </link>
+        <!-- Tighter primitives follow the STL near the TCP. -->
+        <link name="pump_tip_stem_envelope">
+          <collision>
+            <origin xyz="${87.65*pump['mesh_scale'][0]} ${1083.25*pump['mesh_scale'][1]} ${293.6*pump['mesh_scale'][2]}"/>
+            <geometry><box size="${3.9*pump['mesh_scale'][0]} ${12.3*pump['mesh_scale'][1]} ${34.6*pump['mesh_scale'][2]}"/></geometry>
+          </collision>
+        </link>
+        <link name="pump_tip_collar_envelope">
+          <collision>
+            <origin xyz="${96.74983*pump['mesh_scale'][0]} ${1081.4002*pump['mesh_scale'][1]} ${313.05*pump['mesh_scale'][2]}"/>
+            <geometry><cylinder radius="${11.0*max(pump['mesh_scale'][0],pump['mesh_scale'][1])}" length="${4.5*pump['mesh_scale'][2]}"/></geometry>
+          </collision>
+        </link>
+        <link name="pump_nozzle_envelope">
+          <collision>
+            <origin xyz="${96.74983*pump['mesh_scale'][0]} ${1081.4002*pump['mesh_scale'][1]} ${319.25*pump['mesh_scale'][2]}"/>
+            <geometry><cylinder radius="${5.0*max(pump['mesh_scale'][0],pump['mesh_scale'][1])}" length="${8.5*pump['mesh_scale'][2]}"/></geometry>
+          </collision>
+        </link>
+        <link name="pump_outlet_envelope">
+          <collision>
+            <origin xyz="${96.74983*pump['mesh_scale'][0]} ${1081.4002*pump['mesh_scale'][1]} ${324.55*pump['mesh_scale'][2]}"/>
+            <geometry><cylinder radius="${2.2*max(pump['mesh_scale'][0],pump['mesh_scale'][1])}" length="${3.0*pump['mesh_scale'][2]}"/></geometry>
           </collision>
         </link>
         <joint name="tool_to_sleeve_envelope" type="fixed">
@@ -45,6 +71,22 @@
         </joint>
         <joint name="tool_to_body_envelope" type="fixed">
           <parent link="probe_tool_link"/><child link="pump_body_envelope"/>
+          <origin xyz="${'%s %s %s' % (pump['mesh_xyz'][0], pump['mesh_xyz'][1], pump['mesh_xyz'][2])}" rpy="${'%s %s %s' % (pump['mesh_rpy'][0], pump['mesh_rpy'][1], pump['mesh_rpy'][2])}"/>
+        </joint>
+        <joint name="tool_to_tip_stem_envelope" type="fixed">
+          <parent link="probe_tool_link"/><child link="pump_tip_stem_envelope"/>
+          <origin xyz="${'%s %s %s' % (pump['mesh_xyz'][0], pump['mesh_xyz'][1], pump['mesh_xyz'][2])}" rpy="${'%s %s %s' % (pump['mesh_rpy'][0], pump['mesh_rpy'][1], pump['mesh_rpy'][2])}"/>
+        </joint>
+        <joint name="tool_to_tip_collar_envelope" type="fixed">
+          <parent link="probe_tool_link"/><child link="pump_tip_collar_envelope"/>
+          <origin xyz="${'%s %s %s' % (pump['mesh_xyz'][0], pump['mesh_xyz'][1], pump['mesh_xyz'][2])}" rpy="${'%s %s %s' % (pump['mesh_rpy'][0], pump['mesh_rpy'][1], pump['mesh_rpy'][2])}"/>
+        </joint>
+        <joint name="tool_to_nozzle_envelope" type="fixed">
+          <parent link="probe_tool_link"/><child link="pump_nozzle_envelope"/>
+          <origin xyz="${'%s %s %s' % (pump['mesh_xyz'][0], pump['mesh_xyz'][1], pump['mesh_xyz'][2])}" rpy="${'%s %s %s' % (pump['mesh_rpy'][0], pump['mesh_rpy'][1], pump['mesh_rpy'][2])}"/>
+        </joint>
+        <joint name="tool_to_outlet_envelope" type="fixed">
+          <parent link="probe_tool_link"/><child link="pump_outlet_envelope"/>
           <origin xyz="${'%s %s %s' % (pump['mesh_xyz'][0], pump['mesh_xyz'][1], pump['mesh_xyz'][2])}" rpy="${'%s %s %s' % (pump['mesh_rpy'][0], pump['mesh_rpy'][1], pump['mesh_rpy'][2])}"/>
         </joint>
       </xacro:if>

@@ -39,4 +39,8 @@
     <disable_collisions link1="pump_sleeve_envelope" link2="pump_body_envelope" reason="Adjacent"/>
     <!-- Body envelope is rigidly attached to wrist_3 through the flange. -->
     <disable_collisions link1="pump_body_envelope" link2="wrist_3_link" reason="Adjacent"/>
+    <!-- Adjacent pieces of the tighter dispensing-end approximation overlap. -->
+    <disable_collisions link1="pump_tip_stem_envelope" link2="pump_tip_collar_envelope" reason="Adjacent"/>
+    <disable_collisions link1="pump_tip_collar_envelope" link2="pump_nozzle_envelope" reason="Adjacent"/>
+    <disable_collisions link1="pump_nozzle_envelope" link2="pump_outlet_envelope" reason="Adjacent"/>
 </robot>
