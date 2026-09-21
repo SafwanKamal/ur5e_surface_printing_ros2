@@ -34,6 +34,10 @@ joint_limits:
     has_acceleration_limits: true
     max_acceleration: 5.0
   wrist_3_joint:
+    # Provisional simulation range: zero +/- 5 degrees, not verified hardware clearance.
+    has_position_limits: true
+    min_position: -0.08726646259971647
+    max_position: 0.08726646259971647
     has_velocity_limits: true
     max_velocity: 3.1415926535897931
     has_acceleration_limits: true

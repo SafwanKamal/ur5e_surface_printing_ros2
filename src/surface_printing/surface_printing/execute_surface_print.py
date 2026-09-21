@@ -18,6 +18,7 @@ from syringe_interfaces.srv import SetFlow
 from std_msgs.msg import String
 from .common import WorkNode, validate_trajectory
 from .demo_geometry import validate_budget
+from .wrist_guard import load_bounds, check_state, check_trajectory
 from .demo_safety import live_model, calibrated_tool, check_scene, require_mock_model
 
 
@@ -69,6 +70,7 @@ class PrintNode(WorkNode):
             current=dict(zip(self.joints.name,self.joints.position))
             if any(n not in current or not math.isfinite(current[n]) for n in self.joint_names):
                 raise RuntimeError('Invalid robot feedback')
+            if hasattr(self, 'wrist_bounds'): check_state(self.joints, self.wrist_bounds)
             positions=[current[n] for n in self.joint_names]
             if self.motion_reference is None: self.motion_reference=positions
             if max(abs(a-b) for a,b in zip(positions,self.motion_reference))>0.00005:
@@ -148,6 +150,9 @@ def run(node):
         raise ValueError('Plan is older than 5 minutes or has an invalid timestamp; replan')
     trajectory=RobotTrajectory(); set_message_fields(trajectory,data['trajectory'])
     duration=validate_trajectory(trajectory)
+    node.wrist_bounds=load_bounds()
+    check_state(node.fresh_joints(), node.wrist_bounds)
+    check_trajectory(trajectory, node.wrist_bounds)
     xml,model_hash=live_model(node)
     if data.get('link_name') not in ('probe_tcp','nozzle_tcp'):
         raise ValueError('Demo execution requires the calibrated nozzle link')

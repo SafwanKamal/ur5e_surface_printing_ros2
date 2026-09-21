@@ -15,6 +15,7 @@ from geometry_msgs.msg import Pose
 from moveit_msgs.msg import (
     DisplayTrajectory,
     RobotState,
+    JointConstraint,
 )
 from moveit_msgs.srv import (
     GetCartesianPath,
@@ -30,6 +31,7 @@ from rosidl_runtime_py.convert import message_to_ordereddict
 
 from .common import WorkNode, validate_trajectory
 from .demo_safety import live_model
+from .wrist_guard import load_bounds, check_state, check_trajectory
 
 
 def read_waypoints(path, line_id):
@@ -173,6 +175,8 @@ def run(node):
     state = RobotState()
     state.joint_state = node.fresh_joints()
     state.is_diff = True
+    wrist_bounds = load_bounds()
+    check_state(state.joint_state, wrist_bounds)
 
     fk = node.create_client(
         GetPositionFK,
@@ -253,6 +257,13 @@ def run(node):
     request.cartesian_speed_limited_link = link
     request.max_cartesian_speed = speed_mm_s / 1000.0
     request.avoid_collisions = True
+    low, high = wrist_bounds
+    wrist = JointConstraint()
+    wrist.joint_name = 'wrist_3_joint'
+    wrist.position = (low + high) / 2
+    wrist.tolerance_above = wrist.tolerance_below = (high - low) / 2
+    wrist.weight = 1.0
+    request.path_constraints.joint_constraints = [wrist]
 
     request.revolute_jump_threshold = 0.25
 
@@ -274,6 +285,7 @@ def run(node):
             f"code={response.error_code.val}; no plan saved"
         )
 
+    check_trajectory(response.solution, wrist_bounds)
     duration = validate_trajectory(
         response.solution
     )
