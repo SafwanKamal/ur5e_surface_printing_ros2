@@ -30,6 +30,7 @@ from rclpy.qos import (
 from rosidl_runtime_py.convert import message_to_ordereddict
 
 from .common import WorkNode, validate_trajectory
+from .tcp_speed import retime
 from .demo_safety import live_model
 from .wrist_guard import load_bounds, check_state, check_trajectory
 
@@ -166,7 +167,7 @@ def run(node):
     speed_mm_s = float(node.parameter("cartesian_speed_mm_s", 2.0))
     if not math.isfinite(speed_mm_s) or not 0.1 <= speed_mm_s <= 10:
         raise ValueError("Demo cartesian_speed_mm_s must be 0.1..10")
-    _, model_hash = live_model(node)
+    xml, model_hash = live_model(node)
     poses = read_waypoints(
         csv_path,
         line_id,
@@ -286,6 +287,11 @@ def run(node):
         )
 
     check_trajectory(response.solution, wrist_bounds)
+    speed_check = retime(response.solution, xml, link, speed_mm_s, wrist_bounds)
+    node.get_logger().info(
+        f"TCP speed check: {speed_check['before_peak_mm_s']:.3f} -> "
+        f"{speed_check['after_peak_mm_s']:.3f} mm/s sampled peak; "
+        f"time scale {speed_check['time_scale']:.3f}")
     duration = validate_trajectory(
         response.solution
     )
@@ -319,6 +325,7 @@ def run(node):
 
     data = {
         "schema": "surface_print_plan_v2",
+        "tcp_speed_check": speed_check,
         "model_sha256": model_hash,
         "group_name": group,
         "cartesian_speed_mm_s": speed_mm_s,

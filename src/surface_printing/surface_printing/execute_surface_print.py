@@ -18,6 +18,7 @@ from syringe_interfaces.srv import SetFlow
 from std_msgs.msg import String
 from .common import WorkNode, validate_trajectory
 from .demo_geometry import validate_budget
+from .tcp_speed import verify as verify_tcp_speed
 from .wrist_guard import load_bounds, check_state, check_trajectory
 from .demo_safety import live_model, calibrated_tool, check_scene, require_mock_model
 
@@ -157,6 +158,8 @@ def run(node):
     if data.get('link_name') not in ('probe_tcp','nozzle_tcp'):
         raise ValueError('Demo execution requires the calibrated nozzle link')
     if model_hash!=data.get('model_sha256'): raise RuntimeError('Robot model changed; replan')
+    verify_tcp_speed(trajectory, xml, data['link_name'],
+                     data['cartesian_speed_mm_s'], node.wrist_bounds)
     if node.simulation: require_mock_model(xml)
     else: calibrated_tool(xml)
     validate_budget(duration,flow,max_seconds,node.max_volume)
@@ -239,3 +242,4 @@ def main(args=None):
         node.destroy_node()
         if rclpy.ok(): rclpy.shutdown()
     if code: raise SystemExit(code)
+
