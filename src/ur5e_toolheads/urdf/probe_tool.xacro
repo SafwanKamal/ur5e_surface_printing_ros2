@@ -10,6 +10,30 @@
 
   <xacro:macro name="probe_tool" params="parent_link">
 
+    <xacro:property name="pump" value="${xacro.load_yaml('$(find ur5e_toolheads)/config/printing_tool.yaml')}"/>
+    <xacro:if value="${pump['enabled']}">
+      <link name="probe_tool_link">
+        <visual>
+          <origin xyz="${'%s %s %s' % (pump['mesh_xyz'][0], pump['mesh_xyz'][1], pump['mesh_xyz'][2])}" rpy="${'%s %s %s' % (pump['mesh_rpy'][0], pump['mesh_rpy'][1], pump['mesh_rpy'][2])}"/>
+          <geometry><mesh filename="package://ur5e_toolheads/meshes/Full_UR_Syringe_Pump.stl" scale="${'%s %s %s' % (pump['mesh_scale'][0], pump['mesh_scale'][1], pump['mesh_scale'][2])}"/></geometry>
+          <material name="pump_gray"><color rgba="0.55 0.6 0.65 1"/></material>
+        </visual>
+        <collision>
+          <origin xyz="${'%s %s %s' % (pump['mesh_xyz'][0], pump['mesh_xyz'][1], pump['mesh_xyz'][2])}" rpy="${'%s %s %s' % (pump['mesh_rpy'][0], pump['mesh_rpy'][1], pump['mesh_rpy'][2])}"/>
+          <geometry><mesh filename="package://ur5e_toolheads/meshes/Full_UR_Syringe_Pump.stl" scale="${'%s %s %s' % (pump['mesh_scale'][0], pump['mesh_scale'][1], pump['mesh_scale'][2])}"/></geometry>
+        </collision>
+      </link>
+      <joint name="flange_to_probe_tool" type="fixed">
+        <parent link="${parent_link}"/><child link="probe_tool_link"/>
+        <origin xyz="${'%s %s %s' % (pump['mount_xyz'][0], pump['mount_xyz'][1], pump['mount_xyz'][2])}" rpy="${'%s %s %s' % (pump['mount_rpy'][0], pump['mount_rpy'][1], pump['mount_rpy'][2])}"/>
+      </joint>
+      <link name="probe_tcp"/>
+      <joint name="probe_tool_to_tcp" type="fixed">
+        <parent link="probe_tool_link"/><child link="probe_tcp"/>
+        <origin xyz="${'%s %s %s' % (pump['tcp_xyz'][0], pump['tcp_xyz'][1], pump['tcp_xyz'][2])}" rpy="${'%s %s %s' % (pump['tcp_rpy'][0], pump['tcp_rpy'][1], pump['tcp_rpy'][2])}"/>
+      </joint>
+    </xacro:if>
+    <xacro:unless value="${pump['enabled']}">
     <link name="probe_tool_link">
 
       <visual>
@@ -53,6 +77,12 @@
       <parent link="probe_tool_link"/>
       <child link="probe_tcp"/>
       <origin xyz="0 0 0.050032" rpy="0 0 0"/>
+    </joint>
+
+    </xacro:unless>
+    <link name="nozzle_tcp"/>
+    <joint name="probe_tcp_to_nozzle_tcp" type="fixed">
+      <parent link="probe_tcp"/><child link="nozzle_tcp"/>
     </joint>
 
   </xacro:macro>

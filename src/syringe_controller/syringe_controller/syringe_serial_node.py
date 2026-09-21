@@ -125,7 +125,7 @@ class SyringeSerialNode(Node):
                 while b"\n" in pending:
                     line, _, pending = pending.partition(b"\n")
 
-                    if line.strip().startswith(b"READY "):
+                    if line.strip() == b"READY SYRINGE_DEMO_V1":
                         ready = True
 
                 if len(pending) > 4096:
@@ -136,7 +136,7 @@ class SyringeSerialNode(Node):
             if not ready:
                 raise RuntimeError(
                     "Arduino did not send READY; "
-                    "check firmware and USB"
+                    "flash firmware/syringe_demo (SYRINGE_DEMO_V1) and check USB"
                 )
 
             self.backend = SerialBackend(
@@ -281,7 +281,7 @@ class SyringeSerialNode(Node):
 
         return response
 
-    def _start_flow(self, direction, rate, leased=False):
+    def _start_flow(self, direction, rate, leased=True):
         if direction not in (-1, 1):
             return False, "direction must be -1 or +1"
 
@@ -387,6 +387,8 @@ class SyringeSerialNode(Node):
                 rate * 60.0 / self.cal.pulses_per_ml
             )
 
+        if abs(steps) > 3000 or abs(steps) / rate > 100.0:
+            raise ValueError("Demo limit: <=3000 pulses and <=100 seconds per move")
         return steps, rate, effective
 
     def _goal(self, goal, volume):

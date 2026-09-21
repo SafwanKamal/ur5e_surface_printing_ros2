@@ -39,6 +39,8 @@ class SerialBackend:
         self.completed = 0
 
         self.lease_deadline = None
+        self.last_rx = time.monotonic()
+        self.motion_started = None
 
         self.reader = threading.Thread(
             target=self._read,
@@ -170,6 +172,8 @@ class SerialBackend:
                     return False
 
                 self.moving = True
+                self.last_rx = time.monotonic()
+                self.motion_started = time.monotonic()
 
             expected = command.split()[0]
 
@@ -254,6 +258,7 @@ class SerialBackend:
         return acknowledged
 
     def _line(self, line):
+        self.last_rx = time.monotonic()
         self.status(line)
 
         fields = line.split()
@@ -354,7 +359,14 @@ class SerialBackend:
                 self.stop(expired_owner)
 
             elif active:
-                self._write("PING")
+                if time.monotonic() - self.last_rx > 1.0:
+                    self.fail("Firmware feedback lost; relaunch required")
+                    self.stop()
+                elif time.monotonic() - self.motion_started >= 110.0:
+                    self.fail("Host maximum run time exceeded")
+                    self.stop()
+                else:
+                    self._write("PING")
 
     def close(self):
         self.stop()
