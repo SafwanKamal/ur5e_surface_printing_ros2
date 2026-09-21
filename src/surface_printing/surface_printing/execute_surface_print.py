@@ -20,7 +20,9 @@ from .common import WorkNode, validate_trajectory
 from .demo_geometry import validate_budget
 from .tcp_speed import verify as verify_tcp_speed
 from .wrist_guard import load_bounds, check_state, check_trajectory
-from .demo_safety import live_model, calibrated_tool, check_scene, require_mock_model
+from .demo_safety import (live_model, calibrated_tool, check_scene,
+                          require_controller_mode, require_mock_model,
+                          require_real_model)
 
 
 class PrintNode(WorkNode):
@@ -66,7 +68,8 @@ class PrintNode(WorkNode):
             if now-self.joints_received>.5: raise RuntimeError('Robot joint feedback stale')
             if not self.simulation:
                 if now-self.scale_received>.5: raise RuntimeError('Robot speed-scaling feedback stale')
-                if not math.isfinite(self.scale) or self.scale<=0 or abs(self.scale-self.baseline_scale)>2.:
+                if (not math.isfinite(self.scale) or not 0<self.scale<=1 or
+                        abs(self.scale-self.baseline_scale)>0.02):
                     raise RuntimeError('Robot paused/stopped or speed scaling changed; aborting print')
             current=dict(zip(self.joints.name,self.joints.position))
             if any(n not in current or not math.isfinite(current[n]) for n in self.joint_names):
@@ -160,8 +163,12 @@ def run(node):
     if model_hash!=data.get('model_sha256'): raise RuntimeError('Robot model changed; replan')
     verify_tcp_speed(trajectory, xml, data['link_name'],
                      data['cartesian_speed_mm_s'], node.wrist_bounds)
-    if node.simulation: require_mock_model(xml)
-    else: calibrated_tool(xml)
+    if node.simulation:
+        require_mock_model(xml)
+    else:
+        require_real_model(xml)
+        calibrated_tool(xml)
+    require_controller_mode(node,simulation=node.simulation)
     validate_budget(duration,flow,max_seconds,node.max_volume)
     check_scene(node,trajectory,data.get('group_name','ur_manipulator'))
     start_matches(node,trajectory,tolerance)
@@ -175,12 +182,12 @@ def run(node):
     if not node.simulation:
         deadline=time.monotonic()+3
         while node.scale is None or time.monotonic()-node.scale_received>.5:
-            if time.monotonic()>deadline: raise RuntimeError('No fresh UR speed scaling (percent)')
+            if time.monotonic()>deadline: raise RuntimeError('No fresh UR speed scaling factor')
             rclpy.spin_once(node,timeout_sec=.02)
-        if not math.isfinite(node.scale) or not 1<=node.scale<=100:
-            raise RuntimeError('UR speed scaling must be 1..100 percent')
+        if not math.isfinite(node.scale) or not 0<node.scale<=1:
+            raise RuntimeError('UR speed scaling factor must be within (0,1]')
         node.baseline_scale=node.scale
-    actual_estimate=duration/(1. if node.simulation else node.baseline_scale/100.)
+    actual_estimate=duration/(1. if node.simulation else node.baseline_scale)
     # Reserve stop latency in the volume budget (lease + firmware timeout).
     validate_budget(actual_estimate+3.,flow,max_seconds,node.max_volume)
     if not node.simulation:
@@ -242,4 +249,3 @@ def main(args=None):
         node.destroy_node()
         if rclpy.ok(): rclpy.shutdown()
     if code: raise SystemExit(code)
-

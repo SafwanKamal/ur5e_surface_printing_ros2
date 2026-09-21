@@ -2,6 +2,7 @@
 
 #include <builtin_interfaces/msg/duration.hpp>
 #include <geometry_msgs/msg/pose.hpp>
+#include <controller_manager_msgs/srv/list_controllers.hpp>
 
 #include <moveit/move_group_interface/move_group_interface.hpp>
 #include <moveit/robot_state/robot_state.hpp>
@@ -70,6 +71,53 @@ double durationToSeconds(
   return
     static_cast<double>(duration.sec) +
     static_cast<double>(duration.nanosec) * 1e-9;
+}
+
+void requireMockController(
+  const rclcpp::Node::SharedPtr& node)
+{
+  auto client = node->create_client<
+    controller_manager_msgs::srv::ListControllers>(
+      "/controller_manager/list_controllers");
+
+  if (!client->wait_for_service(5s))
+  {
+    throw std::runtime_error(
+      "Controller manager is unavailable");
+  }
+
+  auto future = client->async_send_request(
+    std::make_shared<
+      controller_manager_msgs::srv::ListControllers::Request>());
+
+  if (rclcpp::spin_until_future_complete(
+      node, future, 5s) != rclcpp::FutureReturnCode::SUCCESS)
+  {
+    throw std::runtime_error(
+      "Timed out reading active controllers");
+  }
+
+  bool mock_active = false;
+  bool real_active = false;
+
+  for (const auto& controller : future.get()->controller)
+  {
+    if (controller.state != "active")
+    {
+      continue;
+    }
+    mock_active = mock_active ||
+      controller.name == "ur_manipulator_controller";
+    real_active = real_active ||
+      controller.name == "scaled_joint_trajectory_controller";
+  }
+
+  if (!mock_active || real_active)
+  {
+    throw std::runtime_error(
+      "This saddle executor is simulation-only and requires "
+      "the active mock trajectory controller");
+  }
 }
 
 geometry_msgs::msg::Pose transformToPose(
@@ -887,6 +935,11 @@ int main(int argc, char* argv[])
         "planning_attempts",
         20);
 
+    const std::int64_t approach_retries =
+      node->declare_parameter<std::int64_t>(
+        "approach_retries",
+        5);
+
     const double velocity_scale =
       node->declare_parameter<double>(
         "velocity_scale",
@@ -926,6 +979,11 @@ int main(int argc, char* argv[])
       node->declare_parameter<bool>(
         "execute",
         false);
+
+    const bool simulation =
+      node->declare_parameter<bool>(
+        "simulation",
+        true);
 
     /*
      * This parameter name is retained for compatibility with the
@@ -971,6 +1029,12 @@ int main(int argc, char* argv[])
     {
       throw std::runtime_error(
         "planning_attempts must be at least 1");
+    }
+
+    if (approach_retries < 1 || approach_retries > 20)
+    {
+      throw std::runtime_error(
+        "approach_retries must be within [1, 20]");
     }
 
     if (
@@ -1021,14 +1085,26 @@ int main(int argc, char* argv[])
         "maximum_boundary_jump cannot be negative");
     }
 
-    if (
-      execute &&
-      !confirm_mock_hardware)
+    if (execute && !simulation)
+    {
+      throw std::runtime_error(
+        "Physical execution is disabled in this saddle executor. "
+        "Use the speed-checked surface_printing planner/executor "
+        "for the first hardware motion.");
+    }
+
+    if (execute && !confirm_mock_hardware)
     {
       throw std::runtime_error(
         "Execution requested, but confirm_mock_hardware "
         "is false. Set it to true only after confirming "
         "that execution is safe.");
+    }
+
+
+    if (execute)
+    {
+      requireMockController(node);
     }
 
     std::map<int, std::vector<CsvToolpathPoint>>
@@ -1182,20 +1258,6 @@ int main(int argc, char* argv[])
         "Approach target",
         approach_target);
 
-      if (planned_state)
-      {
-        move_group.setStartState(
-          *planned_state);
-      }
-      else
-      {
-        move_group.setStartStateToCurrentState();
-      }
-
-      move_group.setPoseTarget(
-        approach_target,
-        tcp_link);
-
       moveit::planning_interface::
         MoveGroupInterface::Plan approach_plan;
 
@@ -1205,14 +1267,36 @@ int main(int argc, char* argv[])
         "to line %d...",
         line_id);
 
-      const auto approach_result =
-        move_group.plan(approach_plan);
+      bool approach_succeeded = false;
+      for (std::int64_t retry = 1;
+           retry <= approach_retries;
+           ++retry)
+      {
+        if (planned_state)
+        {
+          move_group.setStartState(*planned_state);
+        }
+        else
+        {
+          move_group.setStartStateToCurrentState();
+        }
+        move_group.setPoseTarget(approach_target,tcp_link);
+        const auto approach_result = move_group.plan(approach_plan);
+        move_group.clearPoseTargets();
+        if (approach_result == moveit::core::MoveItErrorCode::SUCCESS)
+        {
+          approach_succeeded = true;
+          break;
+        }
+        RCLCPP_WARN(
+          logger,
+          "Approach attempt %ld of %ld failed for line %d",
+          static_cast<long>(retry),
+          static_cast<long>(approach_retries),
+          line_id);
+      }
 
-      move_group.clearPoseTargets();
-
-      if (
-        approach_result !=
-        moveit::core::MoveItErrorCode::SUCCESS)
+      if (!approach_succeeded)
       {
         RCLCPP_ERROR(
           logger,
@@ -1457,7 +1541,7 @@ int main(int argc, char* argv[])
 
     RCLCPP_WARN(
       logger,
-      "PHYSICAL EXECUTION ENABLED");
+      "MOCK SIMULATION EXECUTION ENABLED");
 
     RCLCPP_WARN(
       logger,

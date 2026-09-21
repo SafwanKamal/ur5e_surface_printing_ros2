@@ -12,6 +12,7 @@
 
   <!-- Arguments passed by ur_robot_driver/launch/ur_rsp.launch.py -->
   <xacro:arg name="name" default="ur5e"/>
+  <xacro:arg name="ur_type" default="ur5e"/>
   <xacro:arg name="robot_ip" default="192.168.1.102"/>
 
   <xacro:arg
@@ -40,6 +41,9 @@
 
   <!-- Real UR driver parameters -->
   <xacro:arg name="headless_mode" default="false"/>
+  <xacro:arg name="non_blocking_read" default="true"/>
+  <xacro:arg name="verify_robot_model" default="false"/>
+  <xacro:arg name="use_currents_as_efforts" default="true"/>
 
   <xacro:arg name="script_filename" default=""/>
   <xacro:arg name="output_recipe_filename" default=""/>
@@ -113,6 +117,7 @@
   <!-- Real physical hardware interface -->
   <xacro:ur_ros2_control
     name="ur5e_with_probe_mock"
+    ur_type="$(arg ur_type)"
     tf_prefix="$(arg tf_prefix)"
     kinematics_parameters_file="$(arg kinematics_params)"
     transmission_hw_interface="$(arg transmission_hw_interface)"
@@ -121,6 +126,9 @@
     mock_sensor_commands="$(arg mock_sensor_commands)"
 
     headless_mode="$(arg headless_mode)"
+    non_blocking_read="$(arg non_blocking_read)"
+    verify_robot_model="$(arg verify_robot_model)"
+    use_currents_as_efforts="$(arg use_currents_as_efforts)"
     initial_positions="${xacro.load_yaml(initial_positions_file)}"
 
     robot_ip="$(arg robot_ip)"

@@ -1,4 +1,4 @@
-> **Syringe demo branch:** Start with [DEMO_RUNBOOK.md](docs/DEMO_RUNBOOK.md). It supersedes older syringe execution examples below and includes calibration, rehearsal, printing and stop/recovery commands.
+> **Syringe demo branch:** Start with [DEMO_RUNBOOK.md](docs/DEMO_RUNBOOK.md). Before connecting the physical UR5e, follow the gated [HARDWARE_STARTUP.md](docs/HARDWARE_STARTUP.md) procedure.
 
 # UR5e Surface Printing ROS 2
 

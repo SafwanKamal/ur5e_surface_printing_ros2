@@ -17,6 +17,7 @@ find_package(tf2_geometry_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
 find_package(ament_index_cpp REQUIRED)
 find_package(geometric_shapes REQUIRED)
+find_package(controller_manager_msgs REQUIRED)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
@@ -205,6 +206,7 @@ ament_target_dependencies(
   moveit_core
   tf2
   ament_index_cpp
+  controller_manager_msgs
 )
 
 install(TARGETS

@@ -30,8 +30,18 @@ def main():
     inv=(-q[0],-q[1],-q[2],q[3]); scale=.001 if a.units=='mm' else 1.
     output=[]
     with open(a.input) as f:
-        for row in csv.DictReader(f):
-            v=[float(row[k])*scale for k in ('x','y','z')]
+        reader=csv.DictReader(f)
+        fields=set(reader.fieldnames or [])
+        if {'x','y','z'} <= fields:
+            xyz_fields=('x','y','z')
+        elif {'tcp_x_mm','tcp_y_mm','tcp_z_mm'} <= fields:
+            if a.units!='mm':
+                raise ValueError('tcp_*_mm columns require --units mm')
+            xyz_fields=('tcp_x_mm','tcp_y_mm','tcp_z_mm')
+        else:
+            raise ValueError('CSV requires x,y,z or tcp_x_mm,tcp_y_mm,tcp_z_mm columns')
+        for row in reader:
+            v=[float(row[k])*scale for k in xyz_fields]
             orientation=[float(row[k]) for k in ('qx','qy','qz','qw')]
             if not all(math.isfinite(x) for x in v+orientation):
                 raise ValueError('Nonfinite CSV pose')

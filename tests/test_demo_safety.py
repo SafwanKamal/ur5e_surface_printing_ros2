@@ -40,7 +40,7 @@ class DemoSafety(unittest.TestCase):
         now = time.monotonic()
         n.cleaning = False; n.error = ''; n.monitoring = True; n.extruding = False
         n.deadline = now + 30; n.joints_received = now; n.simulation = False
-        n.scale_received = now; n.scale = n.baseline_scale = 50.
+        n.scale_received = now; n.scale = n.baseline_scale = .5
         n.joint_names = ['a']; n.joints = NS(name=['a'], position=[0.01])
         n.motion_reference = [0.]; n.motion_seen = False; n.last_motion = now
         n.flow_started = now; n.last_health = now; n.health = 'MOVING'
@@ -60,7 +60,7 @@ class DemoSafety(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'speed-scaling feedback stale'): n.tick()
 
     def test_paused_and_changed_scaling(self):
-        for scale in [0, float('nan'), 25.]:
+        for scale in [0, float('nan'), .25, 1.01]:
             n = self.node(); n.scale = scale
             with self.assertRaises(RuntimeError): n.tick()
 

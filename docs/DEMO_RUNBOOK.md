@@ -66,8 +66,8 @@ ros2 launch ur5e_probe_moveit_config real_robot.launch.py robot_ip:=192.168.1.10
 Run the pendant External Control program using the existing lab setup. Confirm
 `scaled_joint_trajectory_controller` is active and RViz matches the real robot.
 Keep the speed slider fixed during each run. The executor reads the UR
-`/speed_scaling_state_broadcaster/speed_scaling` topic in percent and aborts on
-stale feedback, zero scaling or a change greater than two percentage points.
+`/speed_scaling_state_broadcaster/speed_scaling` topic as a factor from 0 to 1 and
+aborts on stale feedback, zero scaling or a change greater than 0.02.
 
 ```bash
 ros2 launch syringe_controller syringe.launch.py

@@ -12,6 +12,7 @@ def generate_launch_description():
     robot_ip = LaunchConfiguration("robot_ip")
     reverse_ip = LaunchConfiguration("reverse_ip")
     launch_rviz = LaunchConfiguration("launch_rviz")
+    kinematics_params_file = LaunchConfiguration("kinematics_params_file")
 
     robot_ip_argument = DeclareLaunchArgument(
         "robot_ip",
@@ -29,6 +30,11 @@ def generate_launch_description():
         "launch_rviz",
         default_value="true",
         description="Start the custom MoveIt RViz configuration",
+    )
+
+    kinematics_argument = DeclareLaunchArgument(
+        "kinematics_params_file",
+        description="Absolute path to calibration extracted from this physical UR5e",
     )
 
     driver_launch = PathJoinSubstitution(
@@ -53,6 +59,7 @@ def generate_launch_description():
             "ur_type": "ur5e",
             "robot_ip": robot_ip,
             "reverse_ip": reverse_ip,
+            "kinematics_params_file": kinematics_params_file,
 
             "description_launchfile": custom_description_launch,
 
@@ -77,19 +84,29 @@ def generate_launch_description():
     )
 
     move_group = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(move_group_launch)
+        PythonLaunchDescriptionSource(move_group_launch),
+        launch_arguments={
+            "robot_ip": robot_ip,
+            "reverse_ip": reverse_ip,
+            "kinematics_params_file": kinematics_params_file,
+        }.items(),
     )
 
     moveit_rviz_launch = PathJoinSubstitution(
         [
             FindPackageShare("ur5e_probe_moveit_config"),
             "launch",
-            "moveit_rviz.launch.py",
+            "moveit_rviz_real.launch.py",
         ]
     )
 
     moveit_rviz = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(moveit_rviz_launch),
+        launch_arguments={
+            "robot_ip": robot_ip,
+            "reverse_ip": reverse_ip,
+            "kinematics_params_file": kinematics_params_file,
+        }.items(),
         condition=IfCondition(launch_rviz),
     )
 
@@ -98,6 +115,7 @@ def generate_launch_description():
             robot_ip_argument,
             reverse_ip_argument,
             launch_rviz_argument,
+            kinematics_argument,
             physical_driver,
             move_group,
             moveit_rviz,

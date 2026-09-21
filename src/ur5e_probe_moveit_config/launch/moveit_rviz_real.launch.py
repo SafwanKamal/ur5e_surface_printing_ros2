@@ -5,7 +5,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
 from moveit_configs_utils import MoveItConfigsBuilder
-from moveit_configs_utils.launches import generate_move_group_launch
+from moveit_configs_utils.launches import generate_moveit_rviz_launch
 
 
 def generate_launch_description():
@@ -27,7 +27,7 @@ def generate_launch_description():
         .joint_limits(file_path='config/joint_limits.yaml')
         .trajectory_execution(file_path='config/moveit_controllers_real.yaml')
         .to_moveit_configs())
-    generated=generate_move_group_launch(moveit_config)
+    generated=generate_moveit_rviz_launch(moveit_config)
     return LaunchDescription([
         DeclareLaunchArgument('robot_ip'),
         DeclareLaunchArgument('reverse_ip',default_value='0.0.0.0'),

@@ -6,6 +6,7 @@ from pathlib import Path
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from rcl_interfaces.srv import GetParameters
+from controller_manager_msgs.srv import ListControllers
 from moveit_msgs.msg import RobotState
 from moveit_msgs.srv import GetStateValidity
 
@@ -30,20 +31,11 @@ def calibrated_tool(xml):
     if config.get('enabled') is not True or config.get('calibrated') is not True:
         raise RuntimeError('Enable and calibrate printing_tool.yaml, rebuild, then restart robot/MoveIt')
     root=ET.fromstring(xml)
-    if root.find("./link[@name='pump_sleeve_envelope']") is not None:
-        raise RuntimeError('Coarse collision envelopes are simulation-only; restore verified geometry for physical execution')
-    mesh=root.find("./link[@name='probe_tool_link']/collision/geometry/mesh")
-    if mesh is None or not mesh.get('filename','').endswith('/Full_UR_Syringe_Pump.stl'):
-        raise RuntimeError('Live MoveIt model does not contain the full syringe pump collision mesh')
-    actual_scale=[float(v) for v in mesh.get('scale','1 1 1').split()]
-    expected_scale=config['mesh_scale']
-    if len(actual_scale)!=3 or len(expected_scale)!=3 or any(
-        not math.isfinite(a) or not math.isfinite(b) or b<=0 or abs(a-b)>1e-9
-        for a,b in zip(actual_scale,expected_scale)):
-        raise RuntimeError('Live pump mesh scale differs from calibration')
+    expected_scale=[float(v) for v in config['mesh_scale']]
+    if len(expected_scale)!=3 or any(not math.isfinite(v) or v<=0 for v in expected_scale):
+        raise RuntimeError('Invalid configured pump mesh scale')
     checks=[("./joint[@name='probe_tool_to_tcp']/origin",'tcp'),
-            ("./joint[@name='flange_to_probe_tool']/origin",'mount'),
-            ("./link[@name='probe_tool_link']/collision/origin",'mesh')]
+            ("./joint[@name='flange_to_probe_tool']/origin",'mount')]
     for query, prefix in checks:
         origin=root.find(query)
         if origin is None: raise RuntimeError('Missing tool transform')
@@ -53,6 +45,74 @@ def calibrated_tool(xml):
             if len(actual)!=3 or len(expected)!=3 or any(
                 not math.isfinite(a) or not math.isfinite(float(b)) or abs(a-b)>1e-7 for a,b in zip(actual,expected)):
                 raise RuntimeError('Live tool transform differs from configuration; restart all launches')
+
+    envelope_names={
+        'pump_sleeve_envelope','pump_body_envelope','pump_tip_stem_envelope',
+        'pump_tip_collar_envelope','pump_nozzle_envelope','pump_outlet_envelope'}
+    live_envelopes={link.get('name') for link in root.findall('./link')
+                    if (link.get('name') or '').startswith('pump_') and
+                    (link.get('name') or '').endswith('_envelope')}
+    if live_envelopes:
+        if config.get('coarse_collision') is not True:
+            raise RuntimeError('Live coarse collision model is not enabled in printing_tool.yaml')
+        if live_envelopes != envelope_names:
+            raise RuntimeError('Live coarse collision model is incomplete or unexpected')
+        if root.find("./link[@name='probe_tool_link']/collision") is not None:
+            raise RuntimeError('Live model contains both full-mesh and coarse tool collisions')
+        specs={
+            'pump_sleeve_envelope':('cylinder',(0,1079.4,205.4),(53.0,62.0)),
+            'pump_body_envelope':('box',(84.12483,1081.41265,173.7),(83.25,43.0251,203.6)),
+            'pump_tip_stem_envelope':('box',(87.65,1083.25,293.6),(3.9,12.3,34.6)),
+            'pump_tip_collar_envelope':('cylinder',(96.74983,1081.4002,313.05),(11.0,4.5)),
+            'pump_nozzle_envelope':('cylinder',(96.74983,1081.4002,319.25),(5.0,8.5)),
+            'pump_outlet_envelope':('cylinder',(96.74983,1081.4002,324.55),(2.2,3.0)),
+        }
+        for name,(kind,cad_xyz,dims) in specs.items():
+            collision=root.find(f"./link[@name='{name}']/collision")
+            if collision is None: raise RuntimeError(f'Missing collision for {name}')
+            _check_values(collision.find('origin'),'xyz',
+                          [cad_xyz[i]*expected_scale[i] for i in range(3)],1e-7)
+            geometry=collision.find(f'geometry/{kind}')
+            if geometry is None: raise RuntimeError(f'Wrong collision primitive for {name}')
+            if kind=='box':
+                _check_values(geometry,'size',[dims[i]*expected_scale[i] for i in range(3)],1e-7)
+            else:
+                _check_values(geometry,'radius',[dims[0]*max(expected_scale[:2])],1e-7)
+                _check_values(geometry,'length',[dims[1]*expected_scale[2]],1e-7)
+        joint_children=set()
+        for joint in root.findall('./joint'):
+            child=joint.find('child')
+            if child is not None and child.get('link') in envelope_names:
+                joint_children.add(child.get('link'))
+                if joint.get('type')!='fixed': raise RuntimeError('Tool envelope joint is not fixed')
+                parent=joint.find('parent')
+                if parent is None or parent.get('link')!='probe_tool_link':
+                    raise RuntimeError('Tool envelope is not fixed to probe_tool_link')
+                _check_values(joint.find('origin'),'xyz',config['mesh_xyz'],1e-7)
+                _check_values(joint.find('origin'),'rpy',config['mesh_rpy'],1e-7)
+        if joint_children != envelope_names:
+            raise RuntimeError('Live coarse collision joints are incomplete')
+        return
+
+    mesh=root.find("./link[@name='probe_tool_link']/collision/geometry/mesh")
+    if mesh is None or not mesh.get('filename','').endswith('/Full_UR_Syringe_Pump.stl'):
+        raise RuntimeError('Live MoveIt model contains neither the verified mesh nor coarse pump collision model')
+    _check_values(mesh,'scale',expected_scale,1e-9)
+    collision=root.find("./link[@name='probe_tool_link']/collision")
+    _check_values(collision.find('origin') if collision is not None else None,
+                  'xyz',config['mesh_xyz'],1e-7)
+    _check_values(collision.find('origin') if collision is not None else None,
+                  'rpy',config['mesh_rpy'],1e-7)
+
+
+def _check_values(element, attribute, expected, tolerance):
+    if element is None: raise RuntimeError(f'Missing tool collision {attribute}')
+    actual=[float(v) for v in element.get(attribute,'').split()]
+    expected=[float(v) for v in expected]
+    if len(actual)!=len(expected) or any(
+        not math.isfinite(a) or not math.isfinite(b) or abs(a-b)>tolerance
+        for a,b in zip(actual,expected)):
+        raise RuntimeError(f'Live tool collision {attribute} differs from configuration')
 
 
 def check_scene(node, trajectory, group):
@@ -73,3 +133,26 @@ def require_mock_model(xml):
     plugins=[p.text for p in ET.fromstring(xml).findall('./ros2_control/hardware/plugin')]
     if not plugins or any(p != 'mock_components/GenericSystem' for p in plugins):
         raise RuntimeError('simulation:=true requires a live mock_components/GenericSystem model')
+
+
+def require_real_model(xml):
+    plugins=[(p.text or '').strip() for p in ET.fromstring(xml).findall('./ros2_control/hardware/plugin')]
+    if not plugins or any(p=='mock_components/GenericSystem' for p in plugins):
+        raise RuntimeError('Physical execution requires the live UR driver robot model, not mock hardware')
+    if not any('ur_robot_driver/' in p for p in plugins):
+        raise RuntimeError('Live robot model does not contain the UR robot driver hardware plugin')
+
+
+def require_controller_mode(node, *, simulation):
+    client=node.create_client(ListControllers,'/controller_manager/list_controllers')
+    if not client.wait_for_service(timeout_sec=5):
+        raise RuntimeError('Controller manager is unavailable')
+    response=node.wait(client.call_async(ListControllers.Request()),5)
+    active={controller.name for controller in response.controller if controller.state=='active'}
+    mock='ur_manipulator_controller'
+    real='scaled_joint_trajectory_controller'
+    if simulation:
+        if mock not in active or real in active:
+            raise RuntimeError('Simulation requires only the active mock trajectory controller')
+    elif real not in active or mock in active:
+        raise RuntimeError('Physical execution requires only the active scaled UR trajectory controller')

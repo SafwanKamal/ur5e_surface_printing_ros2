@@ -29,6 +29,7 @@ def generate_launch_description():
             "ur_type": LaunchConfiguration("ur_type"),
             "robot_ip": LaunchConfiguration("robot_ip"),
             "reverse_ip": LaunchConfiguration("reverse_ip"),
+            "kinematics_params_file": LaunchConfiguration("kinematics_params_file"),
             "description_file": custom_description_file,
         }.items(),
     )

@@ -30,6 +30,7 @@ setup(
             "surface_printing.plan_surface_path:main",
             "execute_surface_print = "
             "surface_printing.execute_surface_print:main",
+            "hardware_preflight = surface_printing.hardware_preflight:main",
         ],
     },
 )
