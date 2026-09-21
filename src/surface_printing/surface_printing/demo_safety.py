@@ -30,6 +30,8 @@ def calibrated_tool(xml):
     if config.get('enabled') is not True or config.get('calibrated') is not True:
         raise RuntimeError('Enable and calibrate printing_tool.yaml, rebuild, then restart robot/MoveIt')
     root=ET.fromstring(xml)
+    if root.find("./link[@name='pump_sleeve_envelope']") is not None:
+        raise RuntimeError('Coarse collision envelopes are simulation-only; restore verified geometry for physical execution')
     mesh=root.find("./link[@name='probe_tool_link']/collision/geometry/mesh")
     if mesh is None or not mesh.get('filename','').endswith('/Full_UR_Syringe_Pump.stl'):
         raise RuntimeError('Live MoveIt model does not contain the full syringe pump collision mesh')

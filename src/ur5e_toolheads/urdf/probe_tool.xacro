@@ -18,11 +18,36 @@
           <geometry><mesh filename="package://ur5e_toolheads/meshes/Full_UR_Syringe_Pump.stl" scale="${'%s %s %s' % (pump['mesh_scale'][0], pump['mesh_scale'][1], pump['mesh_scale'][2])}"/></geometry>
           <material name="pump_gray"><color rgba="0.55 0.6 0.65 1"/></material>
         </visual>
+        <xacro:unless value="${pump.get('coarse_collision', False)}">
         <collision>
           <origin xyz="${'%s %s %s' % (pump['mesh_xyz'][0], pump['mesh_xyz'][1], pump['mesh_xyz'][2])}" rpy="${'%s %s %s' % (pump['mesh_rpy'][0], pump['mesh_rpy'][1], pump['mesh_rpy'][2])}"/>
           <geometry><mesh filename="package://ur5e_toolheads/meshes/Full_UR_Syringe_Pump.stl" scale="${'%s %s %s' % (pump['mesh_scale'][0], pump['mesh_scale'][1], pump['mesh_scale'][2])}"/></geometry>
         </collision>
+        </xacro:unless>
       </link>
+      <!-- Conservative envelopes in original CAD coordinates. Visual and TCP unchanged. -->
+      <xacro:if value="${pump.get('coarse_collision', False)}">
+        <link name="pump_sleeve_envelope">
+          <collision>
+            <origin xyz="0 ${1079.4*pump['mesh_scale'][1]} ${205.4*pump['mesh_scale'][2]}"/>
+            <geometry><cylinder radius="${53.0*max(pump['mesh_scale'][0],pump['mesh_scale'][1])}" length="${62.0*pump['mesh_scale'][2]}"/></geometry>
+          </collision>
+        </link>
+        <link name="pump_body_envelope">
+          <collision>
+            <origin xyz="${84.12483*pump['mesh_scale'][0]} ${1081.41265*pump['mesh_scale'][1]} ${199.14168*pump['mesh_scale'][2]}"/>
+            <geometry><box size="${83.25*pump['mesh_scale'][0]} ${43.0251*pump['mesh_scale'][1]} ${254.48336*pump['mesh_scale'][2]}"/></geometry>
+          </collision>
+        </link>
+        <joint name="tool_to_sleeve_envelope" type="fixed">
+          <parent link="probe_tool_link"/><child link="pump_sleeve_envelope"/>
+          <origin xyz="${'%s %s %s' % tuple(pump['mesh_xyz'])}" rpy="${'%s %s %s' % tuple(pump['mesh_rpy'])}"/>
+        </joint>
+        <joint name="tool_to_body_envelope" type="fixed">
+          <parent link="probe_tool_link"/><child link="pump_body_envelope"/>
+          <origin xyz="${'%s %s %s' % tuple(pump['mesh_xyz'])}" rpy="${'%s %s %s' % tuple(pump['mesh_rpy'])}"/>
+        </joint>
+      </xacro:if>
       <joint name="flange_to_probe_tool" type="fixed">
         <parent link="${parent_link}"/><child link="probe_tool_link"/>
         <origin xyz="${'%s %s %s' % (pump['mount_xyz'][0], pump['mount_xyz'][1], pump['mount_xyz'][2])}" rpy="${'%s %s %s' % (pump['mount_rpy'][0], pump['mount_rpy'][1], pump['mount_rpy'][2])}"/>
