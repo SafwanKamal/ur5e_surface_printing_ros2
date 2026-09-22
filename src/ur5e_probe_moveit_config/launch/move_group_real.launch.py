@@ -27,6 +27,16 @@ def generate_launch_description():
         .joint_limits(file_path='config/joint_limits.yaml')
         .trajectory_execution(file_path='config/moveit_controllers_real.yaml')
         .to_moveit_configs())
+
+    # The physical UR scaled controller stretches wall-clock execution when the
+    # pendant speed slider is below 100%.  MoveIt's default 1.2 multiplier can
+    # therefore abort a valid slow trajectory long before the controller is
+    # finished.  The surface-printing executor still applies its independent,
+    # speed-aware deadline and speed-change watchdog.
+    moveit_config.trajectory_execution[
+        'trajectory_execution.allowed_execution_duration_scaling'
+    ]=10.0
+
     generated=generate_move_group_launch(moveit_config)
     return LaunchDescription([
         DeclareLaunchArgument('robot_ip'),
