@@ -50,6 +50,7 @@ class SaddleExtrusionContractTests(unittest.TestCase):
             "setPoseTarget(approach_target,tcp_link)",
             SOURCE,
         )
+        self.assertNotIn("getCurrentState(10.0)", SOURCE)
 
     def test_build_dependencies_are_declared(self):
         for dependency in (
