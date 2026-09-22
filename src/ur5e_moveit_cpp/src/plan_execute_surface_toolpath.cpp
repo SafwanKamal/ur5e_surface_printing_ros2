@@ -90,9 +90,21 @@ void requireControllerMode(
   const rclcpp::Node::SharedPtr& node,
   bool simulation)
 {
-  auto client = node->create_client<
+  /*
+   * Keep this synchronous safety query off the main MoveGroup node.  A
+   * short-lived guard node and an explicitly owned executor avoid transient
+   * executor ownership of the node later handed to MoveGroupInterface.
+   */
+  auto guard_node = rclcpp::Node::make_shared(
+    "saddle_controller_mode_guard");
+
+  auto client = guard_node->create_client<
     controller_manager_msgs::srv::ListControllers>(
       "/controller_manager/list_controllers");
+
+  RCLCPP_INFO(
+    node->get_logger(),
+    "Checking active trajectory controller...");
 
   if (!client->wait_for_service(5s))
   {
@@ -104,17 +116,39 @@ void requireControllerMode(
     std::make_shared<
       controller_manager_msgs::srv::ListControllers::Request>());
 
-  if (rclcpp::spin_until_future_complete(
-      node, future, 5s) != rclcpp::FutureReturnCode::SUCCESS)
+  rclcpp::executors::SingleThreadedExecutor executor;
+  executor.add_node(guard_node);
+
+  const auto deadline =
+    std::chrono::steady_clock::now() + 5s;
+
+  while (
+    rclcpp::ok() &&
+    future.wait_for(0s) != std::future_status::ready &&
+    std::chrono::steady_clock::now() < deadline)
+  {
+    executor.spin_some(20ms);
+  }
+
+  executor.remove_node(guard_node);
+
+  if (future.wait_for(0s) != std::future_status::ready)
   {
     throw std::runtime_error(
       "Timed out reading active controllers");
   }
 
+  const auto response = future.get();
+  if (!response)
+  {
+    throw std::runtime_error(
+      "Controller manager returned an empty response");
+  }
+
   bool mock_active = false;
   bool real_active = false;
 
-  for (const auto& controller : future.get()->controller)
+  for (const auto& controller : response->controller)
   {
     if (controller.state != "active")
     {
@@ -139,6 +173,10 @@ void requireControllerMode(
       "Physical execution requires the active scaled UR "
       "trajectory controller and no active mock controller");
   }
+
+  RCLCPP_INFO(
+    node->get_logger(),
+    "Controller mode check passed");
 }
 
 geometry_msgs::msg::Pose transformToPose(
