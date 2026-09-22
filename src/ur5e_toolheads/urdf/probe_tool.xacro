@@ -35,9 +35,14 @@
         </link>
         <link name="pump_body_envelope">
           <collision>
-            <!-- Main body stops before the narrow dispensing end. -->
-            <origin xyz="${84.12483*pump['mesh_scale'][0]} ${1081.41265*pump['mesh_scale'][1]} ${173.7*pump['mesh_scale'][2]}"/>
-            <geometry><box size="${83.25*pump['mesh_scale'][0]} ${43.0251*pump['mesh_scale'][1]} ${203.6*pump['mesh_scale'][2]}"/></geometry>
+            <!--
+              The sleeve owns the flange-adjacent region out to CAD X=53 mm.
+              Start the checked body at that boundary so its conservative box
+              cannot permanently overlap wrist_2 through the sleeve.  The far
+              face remains at the STL bound X=125.25 mm.
+            -->
+            <origin xyz="${89.125*pump['mesh_scale'][0]} ${1081.41265*pump['mesh_scale'][1]} ${173.7*pump['mesh_scale'][2]}"/>
+            <geometry><box size="${72.25*pump['mesh_scale'][0]} ${43.0251*pump['mesh_scale'][1]} ${203.6*pump['mesh_scale'][2]}"/></geometry>
           </collision>
         </link>
         <!-- Tighter primitives follow the STL near the TCP. -->
