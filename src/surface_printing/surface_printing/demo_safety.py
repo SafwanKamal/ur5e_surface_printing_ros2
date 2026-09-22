@@ -46,9 +46,17 @@ def calibrated_tool(xml):
                 not math.isfinite(a) or not math.isfinite(float(b)) or abs(a-b)>1e-7 for a,b in zip(actual,expected)):
                 raise RuntimeError('Live tool transform differs from configuration; restart all launches')
 
+    needle_length=float(config.get('needle_length_mm',0.0))
+    needle_radius=float(config.get('needle_radius_mm',1.0))
+    needle_tip_clearance=float(config.get('needle_collision_tip_clearance_mm',2.0))
+    if (not all(math.isfinite(v) for v in (needle_length,needle_radius,needle_tip_clearance)) or
+            needle_length<0 or needle_length>200 or needle_radius<=0 or
+            needle_tip_clearance<0 or needle_tip_clearance>=needle_length and needle_length>0):
+        raise RuntimeError('Invalid configured needle collision geometry')
     envelope_names={
         'pump_sleeve_envelope','pump_body_envelope','pump_tip_stem_envelope',
         'pump_tip_collar_envelope','pump_nozzle_envelope','pump_outlet_envelope'}
+    if needle_length>0: envelope_names.add('pump_needle_envelope')
     live_envelopes={link.get('name') for link in root.findall('./link')
                     if (link.get('name') or '').startswith('pump_') and
                     (link.get('name') or '').endswith('_envelope')}
@@ -67,6 +75,15 @@ def calibrated_tool(xml):
             'pump_nozzle_envelope':('cylinder',(96.74983,1081.4002,319.25),(5.0,8.5)),
             'pump_outlet_envelope':('cylinder',(96.74983,1081.4002,324.55),(2.2,3.0)),
         }
+        if needle_length>0:
+            collision_length=(needle_length-needle_tip_clearance)/1000.0
+            outlet=config['syringe_outlet_cad_mm']
+            specs['pump_needle_envelope']=(
+                'cylinder',
+                (float(outlet[0]),float(outlet[1]),
+                 float(outlet[2])+collision_length/(2.0*expected_scale[2])),
+                ((needle_radius/1000.0)/max(expected_scale[:2]),
+                 collision_length/expected_scale[2]))
         for name,(kind,cad_xyz,dims) in specs.items():
             collision=root.find(f"./link[@name='{name}']/collision")
             if collision is None: raise RuntimeError(f'Missing collision for {name}')
