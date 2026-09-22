@@ -27,8 +27,14 @@ class CoarseCollisionEnvelopeTests(unittest.TestCase):
         self.assertIsNotNone(size)
         center = float(origin.group(1))
         width = float(size.group(1))
-        self.assertAlmostEqual(center - width / 2.0, 53.0)
+        self.assertAlmostEqual(center - width / 2.0, 54.0)
         self.assertAlmostEqual(center + width / 2.0, 125.25)
+
+    def test_sleeve_meets_body_boundary(self):
+        self.assertIn(
+            'radius="${54.0*max(pump[\'mesh_scale\'][0],pump[\'mesh_scale\'][1])}"',
+            XACRO,
+        )
 
     def test_tcp_and_mount_transforms_remain_config_driven(self):
         self.assertIn("pump['mount_rpy']", XACRO)
