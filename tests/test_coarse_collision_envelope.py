@@ -7,6 +7,9 @@ ROOT = Path(__file__).resolve().parents[1]
 XACRO = (
     ROOT / "src/ur5e_toolheads/urdf/probe_tool.xacro"
 ).read_text()
+VALIDATOR = (
+    ROOT / "src/surface_printing/surface_printing/demo_safety.py"
+).read_text()
 
 
 class CoarseCollisionEnvelopeTests(unittest.TestCase):
@@ -34,6 +37,17 @@ class CoarseCollisionEnvelopeTests(unittest.TestCase):
         self.assertIn(
             'radius="${54.0*max(pump[\'mesh_scale\'][0],pump[\'mesh_scale\'][1])}"',
             XACRO,
+        )
+
+    def test_preflight_matches_corrected_envelopes(self):
+        self.assertIn(
+            "'pump_sleeve_envelope':('cylinder',(0,1079.4,205.4),(54.0,62.0))",
+            VALIDATOR,
+        )
+        self.assertIn(
+            "'pump_body_envelope':('box',(89.625,1081.41265,173.7),"
+            "(71.25,43.0251,203.6))",
+            VALIDATOR,
         )
 
     def test_tcp_and_mount_transforms_remain_config_driven(self):

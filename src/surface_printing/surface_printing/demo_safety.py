@@ -60,8 +60,8 @@ def calibrated_tool(xml):
         if root.find("./link[@name='probe_tool_link']/collision") is not None:
             raise RuntimeError('Live model contains both full-mesh and coarse tool collisions')
         specs={
-            'pump_sleeve_envelope':('cylinder',(0,1079.4,205.4),(53.0,62.0)),
-            'pump_body_envelope':('box',(84.12483,1081.41265,173.7),(83.25,43.0251,203.6)),
+            'pump_sleeve_envelope':('cylinder',(0,1079.4,205.4),(54.0,62.0)),
+            'pump_body_envelope':('box',(89.625,1081.41265,173.7),(71.25,43.0251,203.6)),
             'pump_tip_stem_envelope':('box',(87.65,1083.25,293.6),(3.9,12.3,34.6)),
             'pump_tip_collar_envelope':('cylinder',(96.74983,1081.4002,313.05),(11.0,4.5)),
             'pump_nozzle_envelope':('cylinder',(96.74983,1081.4002,319.25),(5.0,8.5)),
