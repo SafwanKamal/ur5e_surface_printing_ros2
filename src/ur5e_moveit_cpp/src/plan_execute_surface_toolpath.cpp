@@ -127,9 +127,16 @@ std::map<std::string, double> resolveCollisionFreeIk(
     planning_group,
     request->ik_request.robot_state.joint_state.position);
 
-  request->ik_request.timeout =
-    rclcpp::Duration::from_seconds(
-      timeout_seconds).to_builtin_msg();
+  const auto timeout_nanoseconds =
+    static_cast<std::int64_t>(
+      std::llround(timeout_seconds * 1e9));
+
+  request->ik_request.timeout.sec =
+    static_cast<std::int32_t>(
+      timeout_nanoseconds / 1000000000LL);
+  request->ik_request.timeout.nanosec =
+    static_cast<std::uint32_t>(
+      timeout_nanoseconds % 1000000000LL);
 
   auto future = client->async_send_request(request);
 
