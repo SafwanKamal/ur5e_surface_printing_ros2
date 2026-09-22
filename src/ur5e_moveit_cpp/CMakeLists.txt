@@ -18,6 +18,11 @@ find_package(visualization_msgs REQUIRED)
 find_package(ament_index_cpp REQUIRED)
 find_package(geometric_shapes REQUIRED)
 find_package(controller_manager_msgs REQUIRED)
+find_package(rclcpp_action REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
+find_package(syringe_interfaces REQUIRED)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
@@ -207,6 +212,11 @@ ament_target_dependencies(
   tf2
   ament_index_cpp
   controller_manager_msgs
+  rclcpp_action
+  sensor_msgs
+  std_msgs
+  std_srvs
+  syringe_interfaces
 )
 
 install(TARGETS

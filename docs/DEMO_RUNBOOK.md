@@ -192,7 +192,40 @@ ros2 run surface_printing convert_surface_csv input.csv registered.csv --units m
 The numbers above are syntax examples, NOT a measured current registration.
 Converter changes both position and quaternion, preserves `line_id`, and emits
 meters. Plan one selected line with `-p line_id:=0`; position at its start with
-extrusion off. No automatic inter-line travel or object localization is provided.
+extrusion off.
+
+### Multi-line saddle execution
+
+`plan_execute_surface_toolpath` can plan every line with `line_id:=-1`. Each
+line is represented by a collision-aware OMPL transition followed by a Cartesian
+surface trace. Physical extrusion is gated per trace: STOP is acknowledged before
+every transition, measured robot motion must begin before flow starts, and STOP is
+acknowledged after every trace. A speed-scaling change, stale joint/syringe feedback,
+one second without joint progress, a pump fault, a duration/volume overrun or a
+trajectory failure cancels the active robot goal and requests pump STOP.
+
+Always run `hardware_preflight` first and perform a complete plan-only and
+motion-only rehearsal using the same registration. The executor does not localize
+the object; the following coordinates are placeholders unless independently
+measured:
+
+```bash
+ros2 run ur5e_moveit_cpp plan_execute_surface_toolpath --ros-args \
+  -p csv_path:="$HOME/ur5e_ws/src/ur5e_moveit_cpp/data/toolpaths/saddle/raster_along_x.csv" \
+  -p planning_group:=ur_manipulator -p tcp_link:=probe_tcp \
+  -p planning_frame:=world -p line_id:=-1 \
+  -p object_x:=0.40 -p object_y:=0.60 -p object_z:=0.10 \
+  -p planning_time:=10.0 -p planning_attempts:=8 -p approach_retries:=5 \
+  -p velocity_scale:=0.05 -p acceleration_scale:=0.05 \
+  -p eef_step:=0.002 -p minimum_fraction:=0.999 \
+  -p simulation:=false -p execute:=false
+```
+
+For physical printing, `execute`, `hardware_confirmed`, `extrude` and
+`extrusion_confirmed` must all be explicit. The configured line and total budgets
+must exceed the estimate at the current pendant speed scaling or execution is
+rejected before motion. Do not raise them without checking available syringe stroke
+and expected deposited volume.
 
 ## Validation scope
 

@@ -1,28 +1,41 @@
 #include <ament_index_cpp/get_package_share_directory.hpp>
 
 #include <builtin_interfaces/msg/duration.hpp>
-#include <geometry_msgs/msg/pose.hpp>
 #include <controller_manager_msgs/srv/list_controllers.hpp>
+#include <geometry_msgs/msg/pose.hpp>
 
 #include <moveit/move_group_interface/move_group_interface.hpp>
 #include <moveit/robot_state/robot_state.hpp>
+#include <moveit_msgs/action/execute_trajectory.hpp>
 #include <moveit_msgs/msg/display_trajectory.hpp>
 #include <moveit_msgs/msg/robot_trajectory.hpp>
 
 #include <rclcpp/rclcpp.hpp>
+#include <rclcpp_action/rclcpp_action.hpp>
+#include <rclcpp/executors/single_threaded_executor.hpp>
+
+#include <sensor_msgs/msg/joint_state.hpp>
+#include <std_msgs/msg/empty.hpp>
+#include <std_msgs/msg/float64.hpp>
+#include <std_msgs/msg/string.hpp>
+#include <std_srvs/srv/trigger.hpp>
+#include <syringe_interfaces/srv/set_flow.hpp>
 
 #include <tf2/LinearMath/Quaternion.hpp>
 #include <tf2/LinearMath/Transform.hpp>
 #include <tf2/LinearMath/Vector3.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
+#include <future>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -73,8 +86,9 @@ double durationToSeconds(
     static_cast<double>(duration.nanosec) * 1e-9;
 }
 
-void requireMockController(
-  const rclcpp::Node::SharedPtr& node)
+void requireControllerMode(
+  const rclcpp::Node::SharedPtr& node,
+  bool simulation)
 {
   auto client = node->create_client<
     controller_manager_msgs::srv::ListControllers>(
@@ -112,11 +126,18 @@ void requireMockController(
       controller.name == "scaled_joint_trajectory_controller";
   }
 
-  if (!mock_active || real_active)
+  if (simulation && (!mock_active || real_active))
   {
     throw std::runtime_error(
       "This saddle executor is simulation-only and requires "
       "the active mock trajectory controller");
+  }
+
+  if (!simulation && (!real_active || mock_active))
+  {
+    throw std::runtime_error(
+      "Physical execution requires the active scaled UR "
+      "trajectory controller and no active mock controller");
   }
 }
 
@@ -848,6 +869,702 @@ bool validateSegmentBoundary(
   return true;
 }
 
+class SafeSegmentExecutor
+{
+public:
+  using ExecuteTrajectory =
+    moveit_msgs::action::ExecuteTrajectory;
+  using GoalHandle =
+    rclcpp_action::ClientGoalHandle<ExecuteTrajectory>;
+
+  SafeSegmentExecutor(
+    bool physical,
+    double maximum_line_duration,
+    double maximum_line_volume,
+    double maximum_total_volume)
+  : physical_(physical),
+    maximum_line_duration_(maximum_line_duration),
+    maximum_line_volume_(maximum_line_volume),
+    maximum_total_volume_(maximum_total_volume),
+    node_(rclcpp::Node::make_shared(
+        "saddle_segment_executor")),
+    action_client_(rclcpp_action::create_client<
+        ExecuteTrajectory>(node_, "/execute_trajectory")),
+    flow_client_(node_->create_client<
+        syringe_interfaces::srv::SetFlow>(
+          "/syringe/set_flow")),
+    stop_client_(node_->create_client<
+        std_srvs::srv::Trigger>(
+          "/syringe/stop")),
+    keepalive_publisher_(node_->create_publisher<
+        std_msgs::msg::Empty>(
+          "/syringe/flow_keepalive", 10))
+  {
+    status_subscription_ = node_->create_subscription<
+      std_msgs::msg::String>(
+        "/syringe/status",
+        10,
+        [this](const std_msgs::msg::String::SharedPtr message)
+        {
+          bool extruding = false;
+          {
+            std::lock_guard<std::mutex> lock(mutex_);
+            status_received_ = std::chrono::steady_clock::now();
+            extruding = extruding_;
+            if (message->data.rfind("STATE ", 0) == 0)
+            {
+              syringe_state_ = message->data.substr(6);
+            }
+          }
+
+          if (
+            extruding &&
+            (message->data.rfind("FAULT", 0) == 0 ||
+            message->data.rfind("ERROR", 0) == 0 ||
+            message->data.rfind("LEASE_EXPIRED", 0) == 0))
+          {
+            tripFault(message->data);
+          }
+        });
+
+    speed_subscription_ = node_->create_subscription<
+      std_msgs::msg::Float64>(
+        "/speed_scaling_state_broadcaster/speed_scaling",
+        rclcpp::SensorDataQoS(),
+        [this](const std_msgs::msg::Float64::SharedPtr message)
+        {
+          std::lock_guard<std::mutex> lock(mutex_);
+          speed_scaling_ =
+            message->data > 0.0 && message->data <= 1.0
+            ? message->data * 100.0
+            : message->data;
+          speed_received_ = std::chrono::steady_clock::now();
+        });
+
+    joint_subscription_ = node_->create_subscription<
+      sensor_msgs::msg::JointState>(
+        "/joint_states",
+        rclcpp::SensorDataQoS(),
+        [this](const sensor_msgs::msg::JointState::SharedPtr message)
+        {
+          std::lock_guard<std::mutex> lock(mutex_);
+          latest_joints_ = *message;
+          joints_received_ = std::chrono::steady_clock::now();
+
+          if (monitored_joint_names_.empty())
+          {
+            return;
+          }
+
+          const std::vector<double> positions =
+            orderedJointPositionsLocked();
+
+          if (positions.empty())
+          {
+            return;
+          }
+
+          if (motion_reference_.empty())
+          {
+            motion_reference_ = positions;
+            return;
+          }
+
+          double maximum_change = 0.0;
+          for (std::size_t index = 0;
+               index < positions.size();
+               ++index)
+          {
+            maximum_change = std::max(
+              maximum_change,
+              std::abs(
+                positions[index] -
+                motion_reference_[index]));
+          }
+
+          if (maximum_change > 0.00005)
+          {
+            motion_seen_ = true;
+            last_motion_ = std::chrono::steady_clock::now();
+            motion_reference_ = positions;
+          }
+        });
+
+    safety_timer_ = node_->create_wall_timer(
+      100ms,
+      [this]() { safetyTick(); });
+
+    executor_.add_node(node_);
+    spin_thread_ = std::thread(
+      [this]() { executor_.spin(); });
+  }
+
+  ~SafeSegmentExecutor()
+  {
+    if (physical_)
+    {
+      try
+      {
+        stopFlow(true);
+      }
+      catch (const std::exception& error)
+      {
+        RCLCPP_ERROR(
+          node_->get_logger(),
+          "Final syringe STOP unconfirmed: %s; "
+          "use the physical stop",
+          error.what());
+      }
+    }
+
+    executor_.cancel();
+    if (spin_thread_.joinable())
+    {
+      spin_thread_.join();
+    }
+    executor_.remove_node(node_);
+  }
+
+  void waitUntilReady(bool require_syringe)
+  {
+    if (!action_client_->wait_for_action_server(5s))
+    {
+      throw std::runtime_error(
+        "MoveIt execute_trajectory action is unavailable");
+    }
+
+    if (!physical_)
+    {
+      return;
+    }
+
+    if (!stop_client_->wait_for_service(5s))
+    {
+      throw std::runtime_error(
+        "Syringe STOP service is unavailable");
+    }
+
+    if (
+      require_syringe &&
+      !flow_client_->wait_for_service(5s))
+    {
+      throw std::runtime_error(
+        "Syringe flow service is unavailable");
+    }
+
+    const auto deadline =
+      std::chrono::steady_clock::now() + 5s;
+
+    while (std::chrono::steady_clock::now() < deadline)
+    {
+      {
+        std::lock_guard<std::mutex> lock(mutex_);
+        const auto now = std::chrono::steady_clock::now();
+        if (
+          now - speed_received_ < 500ms &&
+          now - joints_received_ < 500ms &&
+          std::isfinite(speed_scaling_) &&
+          speed_scaling_ >= 1.0 &&
+          speed_scaling_ <= 100.0)
+        {
+          session_speed_scaling_ = speed_scaling_;
+          return;
+        }
+      }
+      std::this_thread::sleep_for(20ms);
+    }
+
+    throw std::runtime_error(
+      "Fresh UR speed scaling and joint feedback are required");
+  }
+
+  double speedScalingFraction() const
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return session_speed_scaling_ / 100.0;
+  }
+
+  void establishStopped()
+  {
+    if (physical_)
+    {
+      stopFlow(true);
+    }
+  }
+
+  void execute(
+    const moveit_msgs::msg::RobotTrajectory& trajectory,
+    bool extrude,
+    double requested_flow,
+    std::size_t segment_index)
+  {
+    if (extrude && !physical_)
+    {
+      throw std::runtime_error(
+        "Extrusion is forbidden in simulation");
+    }
+
+    establishStopped();
+
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      faulted_ = false;
+      fault_message_.clear();
+      monitored_joint_names_ =
+        trajectory.joint_trajectory.joint_names;
+      motion_reference_ = orderedJointPositionsLocked();
+      motion_seen_ = false;
+      last_motion_ = std::chrono::steady_clock::now();
+    }
+
+    ExecuteTrajectory::Goal goal;
+    goal.trajectory = trajectory;
+
+    auto goal_future = action_client_->async_send_goal(goal);
+    if (goal_future.wait_for(5s) != std::future_status::ready)
+    {
+      throw std::runtime_error(
+        "Timed out waiting for trajectory acceptance");
+    }
+
+    const std::shared_ptr<GoalHandle> goal_handle =
+      goal_future.get();
+
+    if (!goal_handle)
+    {
+      throw std::runtime_error(
+        "MoveIt rejected trajectory segment " +
+        std::to_string(segment_index));
+    }
+
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      active_goal_ = goal_handle;
+    }
+
+    auto result_future =
+      action_client_->async_get_result(goal_handle);
+
+    if (extrude)
+    {
+      const auto motion_deadline =
+        std::chrono::steady_clock::now() + 5s;
+
+      while (std::chrono::steady_clock::now() < motion_deadline)
+      {
+        if (!rclcpp::ok())
+        {
+          tripFault("ROS shutdown requested");
+        }
+        throwIfFaulted();
+
+        if (result_future.wait_for(20ms) ==
+          std::future_status::ready)
+        {
+          throw std::runtime_error(
+            "Surface trace ended before extrusion could start");
+        }
+
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (motion_seen_)
+        {
+          break;
+        }
+      }
+
+      bool motion_seen = false;
+      {
+        std::lock_guard<std::mutex> lock(mutex_);
+        motion_seen = motion_seen_;
+      }
+      if (!motion_seen)
+      {
+        tripFault("No measured robot motion before extrusion");
+      }
+
+      throwIfFaulted();
+      startFlow(requested_flow);
+    }
+
+    while (result_future.wait_for(50ms) !=
+      std::future_status::ready)
+    {
+      if (!rclcpp::ok())
+      {
+        tripFault("ROS shutdown requested");
+      }
+      throwIfFaulted();
+    }
+
+    const auto wrapped_result = result_future.get();
+
+    if (extrude)
+    {
+      stopFlow(true);
+    }
+
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      active_goal_.reset();
+      monitored_joint_names_.clear();
+      motion_reference_.clear();
+    }
+
+    throwIfFaulted();
+
+    if (
+      wrapped_result.code !=
+        rclcpp_action::ResultCode::SUCCEEDED ||
+      !wrapped_result.result ||
+      wrapped_result.result->error_code.val != 1)
+    {
+      throw std::runtime_error(
+        "Robot failed while executing segment " +
+        std::to_string(segment_index));
+    }
+  }
+
+  double totalExtrudedVolume() const
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return total_volume_;
+  }
+
+private:
+  std::vector<double> orderedJointPositionsLocked() const
+  {
+    if (
+      latest_joints_.name.empty() ||
+      latest_joints_.name.size() !=
+        latest_joints_.position.size())
+    {
+      return {};
+    }
+
+    std::unordered_map<std::string, double> positions;
+    for (std::size_t index = 0;
+         index < latest_joints_.name.size();
+         ++index)
+    {
+      positions[latest_joints_.name[index]] =
+        latest_joints_.position[index];
+    }
+
+    std::vector<double> ordered;
+    ordered.reserve(monitored_joint_names_.size());
+    for (const std::string& name : monitored_joint_names_)
+    {
+      const auto found = positions.find(name);
+      if (
+        found == positions.end() ||
+        !std::isfinite(found->second))
+      {
+        return {};
+      }
+      ordered.push_back(found->second);
+    }
+    return ordered;
+  }
+
+  void startFlow(double requested_flow)
+  {
+    bool feedback_stale = false;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      const auto now = std::chrono::steady_clock::now();
+      feedback_stale =
+        now - speed_received_ > 500ms ||
+        now - joints_received_ > 500ms ||
+        !std::isfinite(speed_scaling_) ||
+        speed_scaling_ <= 0.0 ||
+        std::abs(
+          speed_scaling_ -
+          session_speed_scaling_) > 2.0;
+    }
+    if (feedback_stale)
+    {
+      tripFault("Robot feedback is not fresh at flow start");
+    }
+    throwIfFaulted();
+
+    auto request = std::make_shared<
+      syringe_interfaces::srv::SetFlow::Request>();
+    request->enabled = true;
+    request->flow_ml_per_min = requested_flow;
+    request->retract = false;
+
+    const auto requested_at =
+      std::chrono::steady_clock::now();
+    auto future = flow_client_->async_send_request(request);
+
+    if (future.wait_for(3s) != std::future_status::ready)
+    {
+      tripFault("Syringe flow acknowledgement timed out");
+      throwIfFaulted();
+    }
+
+    const auto response = future.get();
+    if (!response->success)
+    {
+      tripFault(
+        "Syringe rejected flow: " + response->message);
+      throwIfFaulted();
+    }
+
+    if (
+      !std::isfinite(response->effective_flow_ml_per_min) ||
+      response->effective_flow_ml_per_min <= 0.0)
+    {
+      tripFault("Syringe returned an invalid effective flow");
+      throwIfFaulted();
+    }
+
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      effective_flow_ =
+        response->effective_flow_ml_per_min;
+      baseline_speed_scaling_ = session_speed_scaling_;
+      flow_started_ = requested_at;
+      last_motion_ = requested_at;
+      extruding_ = true;
+    }
+
+    RCLCPP_WARN(
+      node_->get_logger(),
+      "Extrusion started at %.4f mL/min",
+      response->effective_flow_ml_per_min);
+  }
+
+  void stopFlow(bool require_acknowledgement)
+  {
+    double line_volume = 0.0;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (extruding_)
+      {
+        const double seconds =
+          std::chrono::duration<double>(
+            std::chrono::steady_clock::now() -
+            flow_started_).count();
+        line_volume =
+          seconds * effective_flow_ / 60.0;
+        total_volume_ += line_volume;
+      }
+      extruding_ = false;
+    }
+
+    if (!physical_ || !stop_client_->service_is_ready())
+    {
+      if (require_acknowledgement && physical_)
+      {
+        throw std::runtime_error(
+          "Syringe STOP service is unavailable");
+      }
+      return;
+    }
+
+    auto future = stop_client_->async_send_request(
+      std::make_shared<std_srvs::srv::Trigger::Request>());
+
+    if (future.wait_for(3s) != std::future_status::ready)
+    {
+      if (require_acknowledgement)
+      {
+        throw std::runtime_error(
+          "Syringe STOP acknowledgement timed out");
+      }
+      return;
+    }
+
+    const auto response = future.get();
+    if (!response->success && require_acknowledgement)
+    {
+      throw std::runtime_error(
+        "Syringe STOP was rejected: " +
+        response->message);
+    }
+
+    if (line_volume > 0.0)
+    {
+      RCLCPP_INFO(
+        node_->get_logger(),
+        "Extrusion stopped; estimated line volume %.4f mL, "
+        "total %.4f mL",
+        line_volume,
+        totalExtrudedVolume());
+    }
+  }
+
+  void safetyTick()
+  {
+    bool publish_keepalive = false;
+    std::string error;
+
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (!extruding_)
+      {
+        return;
+      }
+
+      publish_keepalive = true;
+      const auto now = std::chrono::steady_clock::now();
+      const double line_seconds =
+        std::chrono::duration<double>(
+          now - flow_started_).count();
+      const double line_volume =
+        line_seconds * effective_flow_ / 60.0;
+
+      if (line_seconds > maximum_line_duration_)
+      {
+        error = "Maximum line extrusion duration reached";
+      }
+      else if (line_volume >= maximum_line_volume_)
+      {
+        error = "Maximum line extrusion volume reached";
+      }
+      else if (
+        total_volume_ + line_volume >=
+        maximum_total_volume_)
+      {
+        error = "Maximum total extrusion volume reached";
+      }
+      else if (now - joints_received_ > 500ms)
+      {
+        error = "Robot joint feedback became stale";
+      }
+      else if (now - speed_received_ > 500ms)
+      {
+        error = "UR speed-scaling feedback became stale";
+      }
+      else if (
+        !std::isfinite(speed_scaling_) ||
+        speed_scaling_ <= 0.0 ||
+        std::abs(
+          speed_scaling_ -
+          baseline_speed_scaling_) > 2.0)
+      {
+        error = "Robot paused/stopped or speed scaling changed";
+      }
+      else if (now - last_motion_ > 1s)
+      {
+        error = "No measured robot progress for one second";
+      }
+      else if (
+        line_seconds > 0.75 &&
+        syringe_state_.rfind("MOVING", 0) != 0)
+      {
+        error = "Syringe is not reporting MOVING";
+      }
+      else if (
+        line_seconds > 1.0 &&
+        now - status_received_ > 1s)
+      {
+        error = "Syringe status became stale";
+      }
+    }
+
+    if (publish_keepalive)
+    {
+      keepalive_publisher_->publish(
+        std_msgs::msg::Empty());
+    }
+
+    if (!error.empty())
+    {
+      tripFault(error);
+    }
+  }
+
+  void tripFault(const std::string& message)
+  {
+    bool expected = false;
+    if (!faulted_.compare_exchange_strong(expected, true))
+    {
+      return;
+    }
+
+    std::shared_ptr<GoalHandle> goal;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      fault_message_ = message;
+      extruding_ = false;
+      goal = active_goal_;
+    }
+
+    RCLCPP_ERROR(
+      node_->get_logger(),
+      "Print safety fault: %s",
+      message.c_str());
+
+    if (stop_client_->service_is_ready())
+    {
+      stop_client_->async_send_request(
+        std::make_shared<std_srvs::srv::Trigger::Request>());
+    }
+    if (goal)
+    {
+      action_client_->async_cancel_goal(goal);
+    }
+  }
+
+  void throwIfFaulted() const
+  {
+    if (!faulted_)
+    {
+      return;
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    throw std::runtime_error(fault_message_);
+  }
+
+  bool physical_;
+  double maximum_line_duration_;
+  double maximum_line_volume_;
+  double maximum_total_volume_;
+
+  rclcpp::Node::SharedPtr node_;
+  rclcpp::executors::SingleThreadedExecutor executor_;
+  std::thread spin_thread_;
+  rclcpp_action::Client<ExecuteTrajectory>::SharedPtr
+    action_client_;
+  rclcpp::Client<syringe_interfaces::srv::SetFlow>::SharedPtr
+    flow_client_;
+  rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr
+    stop_client_;
+  rclcpp::Publisher<std_msgs::msg::Empty>::SharedPtr
+    keepalive_publisher_;
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr
+    status_subscription_;
+  rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr
+    speed_subscription_;
+  rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr
+    joint_subscription_;
+  rclcpp::TimerBase::SharedPtr safety_timer_;
+
+  mutable std::mutex mutex_;
+  sensor_msgs::msg::JointState latest_joints_;
+  std::vector<std::string> monitored_joint_names_;
+  std::vector<double> motion_reference_;
+  std::shared_ptr<GoalHandle> active_goal_;
+  std::chrono::steady_clock::time_point joints_received_{};
+  std::chrono::steady_clock::time_point speed_received_{};
+  std::chrono::steady_clock::time_point status_received_{};
+  std::chrono::steady_clock::time_point flow_started_{};
+  std::chrono::steady_clock::time_point last_motion_{};
+  std::string syringe_state_;
+  std::string fault_message_;
+  double speed_scaling_ = 0.0;
+  double session_speed_scaling_ = 0.0;
+  double baseline_speed_scaling_ = 0.0;
+  double effective_flow_ = 0.0;
+  double total_volume_ = 0.0;
+  bool extruding_ = false;
+  bool motion_seen_ = false;
+  std::atomic<bool> faulted_{false};
+};
+
 }  // namespace
 
 int main(int argc, char* argv[])
@@ -985,6 +1702,41 @@ int main(int argc, char* argv[])
         "simulation",
         true);
 
+    const bool extrude =
+      node->declare_parameter<bool>(
+        "extrude",
+        false);
+
+    const double flow_ml_per_min =
+      node->declare_parameter<double>(
+        "flow_ml_per_min",
+        1.0);
+
+    const double maximum_line_extrusion_seconds =
+      node->declare_parameter<double>(
+        "max_line_extrusion_sec",
+        60.0);
+
+    const double maximum_line_volume_ml =
+      node->declare_parameter<double>(
+        "max_line_volume_ml",
+        1.0);
+
+    const double maximum_total_volume_ml =
+      node->declare_parameter<double>(
+        "max_total_volume_ml",
+        1.0);
+
+    const bool hardware_confirmed =
+      node->declare_parameter<bool>(
+        "hardware_confirmed",
+        false);
+
+    const bool extrusion_confirmed =
+      node->declare_parameter<bool>(
+        "extrusion_confirmed",
+        false);
+
     /*
      * This parameter name is retained for compatibility with the
      * existing command. It is currently acting as an explicit
@@ -1085,15 +1837,46 @@ int main(int argc, char* argv[])
         "maximum_boundary_jump cannot be negative");
     }
 
-    if (execute && !simulation)
+    if (
+      !std::isfinite(flow_ml_per_min) ||
+      flow_ml_per_min <= 0.0)
     {
       throw std::runtime_error(
-        "Physical execution is disabled in this saddle executor. "
-        "Use the speed-checked surface_printing planner/executor "
-        "for the first hardware motion.");
+        "flow_ml_per_min must be finite and positive");
     }
 
-    if (execute && !confirm_mock_hardware)
+    if (
+      !std::isfinite(maximum_line_extrusion_seconds) ||
+      maximum_line_extrusion_seconds <= 0.0 ||
+      !std::isfinite(maximum_line_volume_ml) ||
+      maximum_line_volume_ml <= 0.0 ||
+      !std::isfinite(maximum_total_volume_ml) ||
+      maximum_total_volume_ml <= 0.0)
+    {
+      throw std::runtime_error(
+        "Extrusion duration and volume limits must be "
+        "finite and positive");
+    }
+
+    if (extrude && (!execute || simulation))
+    {
+      throw std::runtime_error(
+        "Extrusion requires physical execution");
+    }
+
+    if (execute && !simulation && !hardware_confirmed)
+    {
+      throw std::runtime_error(
+        "Physical execution requires hardware_confirmed:=true");
+    }
+
+    if (extrude && !extrusion_confirmed)
+    {
+      throw std::runtime_error(
+        "Extrusion requires extrusion_confirmed:=true");
+    }
+
+    if (execute && simulation && !confirm_mock_hardware)
     {
       throw std::runtime_error(
         "Execution requested, but confirm_mock_hardware "
@@ -1104,7 +1887,7 @@ int main(int argc, char* argv[])
 
     if (execute)
     {
-      requireMockController(node);
+      requireControllerMode(node, simulation);
     }
 
     std::map<int, std::vector<CsvToolpathPoint>>
@@ -1539,9 +2322,88 @@ int main(int argc, char* argv[])
       return 0;
     }
 
-    RCLCPP_WARN(
-      logger,
-      "MOCK SIMULATION EXECUTION ENABLED");
+    if (simulation)
+    {
+      RCLCPP_WARN(
+        logger,
+        "MOCK SIMULATION EXECUTION ENABLED");
+    }
+    else
+    {
+      RCLCPP_WARN(
+        logger,
+        "PHYSICAL EXECUTION ENABLED");
+      RCLCPP_WARN(
+        logger,
+        extrude
+          ? "Extrusion will run only during measured Cartesian "
+            "surface motion"
+          : "Extrusion is disabled");
+    }
+
+    SafeSegmentExecutor segment_executor(
+      !simulation,
+      maximum_line_extrusion_seconds,
+      maximum_line_volume_ml,
+      maximum_total_volume_ml);
+
+    segment_executor.waitUntilReady(extrude);
+    segment_executor.establishStopped();
+
+    if (!simulation && extrude)
+    {
+      const double speed_fraction =
+        segment_executor.speedScalingFraction();
+      double estimated_total_volume = 0.0;
+
+      for (std::size_t segment_index = 1;
+           segment_index <
+             display_trajectory.trajectory.size();
+           segment_index += 2)
+      {
+        const auto& points =
+          display_trajectory.trajectory[segment_index]
+            .joint_trajectory.points;
+        if (points.empty())
+        {
+          throw std::runtime_error(
+            "Surface trace contains no trajectory points");
+        }
+
+        const double nominal_seconds =
+          durationToSeconds(
+            points.back().time_from_start);
+        const double estimated_seconds =
+          nominal_seconds / speed_fraction;
+        const double estimated_volume =
+          estimated_seconds * flow_ml_per_min / 60.0;
+
+        if (
+          estimated_seconds >
+            maximum_line_extrusion_seconds ||
+          estimated_volume > maximum_line_volume_ml)
+        {
+          throw std::runtime_error(
+            "A surface line exceeds the configured extrusion "
+            "duration or volume budget");
+        }
+        estimated_total_volume += estimated_volume;
+      }
+
+      if (estimated_total_volume > maximum_total_volume_ml)
+      {
+        throw std::runtime_error(
+          "The full saddle exceeds max_total_volume_ml");
+      }
+
+      RCLCPP_WARN(
+        logger,
+        "Estimated extrusion at %.1f%% speed scaling: "
+        "%.3f mL (limit %.3f mL)",
+        speed_fraction * 100.0,
+        estimated_total_volume,
+        maximum_total_volume_ml);
+    }
 
     RCLCPP_WARN(
       logger,
@@ -1597,23 +2459,18 @@ int main(int argc, char* argv[])
           ? "OMPL transition"
           : "Cartesian surface trace");
 
-      const auto execution_result =
-        move_group.execute(segment);
-
-      if (
-        execution_result !=
-        moveit::core::MoveItErrorCode::SUCCESS)
+      try
       {
-        move_group.stop();
-
-        RCLCPP_ERROR(
-          logger,
-          "Execution failed at segment %zu. "
-          "No later segments will be executed.",
+        segment_executor.execute(
+          segment,
+          !is_transition && extrude,
+          flow_ml_per_min,
           segment_index);
-
-        rclcpp::shutdown();
-        return 1;
+      }
+      catch (...)
+      {
+        segment_executor.establishStopped();
+        throw;
       }
 
       RCLCPP_INFO(
@@ -1624,7 +2481,9 @@ int main(int argc, char* argv[])
 
     RCLCPP_INFO(
       logger,
-      "All trajectory segments executed successfully");
+      "All trajectory segments executed successfully; "
+      "estimated extruded volume %.4f mL",
+      segment_executor.totalExtrudedVolume());
   }
   catch (const std::exception& error)
   {
