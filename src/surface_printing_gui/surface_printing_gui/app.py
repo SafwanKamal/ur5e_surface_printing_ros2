@@ -1,6 +1,7 @@
 """Tk desktop workflow console. The existing ROS executors remain authoritative."""
 import argparse
 import hashlib
+import json
 from pathlib import Path
 import queue
 import re
@@ -21,6 +22,7 @@ class PrintingApp:
         self.root.geometry('1180x920')
         self.root.minsize(980, 740)
         self.processes = ProcessManager()
+        self.mock_window = None
         self.gate = PlanGate()
         self.callbacks = {}
         self.task = None
@@ -49,6 +51,7 @@ class PrintingApp:
         ttk.Label(bar, text='Generate > register > plan > check in RViz > rehearse > print',
                   style='Note.TLabel').pack(side='left')
         ttk.Button(bar, text='REQUEST ROBOT + PUMP STOP', command=self.request_stop).pack(side='right')
+        ttk.Button(bar, text='Open mock verification', command=lambda: self.guard(self.open_mock_window)).pack(side='right', padx=8)
         self.notebook = ttk.Notebook(root)
         self.notebook.pack(fill='both', expand=True, padx=14)
         self.pages = {name: self.page(name) for name in
@@ -73,7 +76,7 @@ class PrintingApp:
             self.variables[key].trace_add('write', self.invalidate)
         self.variables['mode'].trace_add('write', self.mode_changed)
         self.root.protocol('WM_DELETE_WINDOW', self.close)
-        self.root.after(100, self.poll)
+        self.poll_after = self.root.after(100, self.poll)
         self.log('GUI', 'Source ROS Jazzy and the built workspace before launching. Mock mode is the default.')
         if not shutil.which('ros2'):
             self.log('GUI', 'ros2 is not on PATH. Geometry can still run; source ROS before using robot tools.')
@@ -145,6 +148,16 @@ class PrintingApp:
     def session(self):
         return Session(self.get('mode'), integer(self.get('domain'), 'ROS domain', 0, 232),
                        str(Path(self.get('workspace')).expanduser().resolve()))
+
+    def open_mock_window(self):
+        if self.mock_window is not None:
+            self.mock_window.window.lift()
+            return
+        s = self.session()
+        if s.mode != 'mock' or s.domain != 78:
+            raise ValueError('Select mock mode and ROS domain 78 before opening mock verification.')
+        from .mock_window import MockWindow
+        self.mock_window = MockWindow(self)
 
     def mode_changed(self, *args):
         mode = self.get('mode')
@@ -446,17 +459,19 @@ class PrintingApp:
                 raise ValueError(f'The selected workspace is not sourced. Close the GUI, source {expected}/setup.bash, then relaunch.')
         self.log(name,f'[domain {s.domain}, {s.mode}] '+shlex.join(argv))
         self.processes.start(name,argv,s,'background' if background else kind)
+        if self.mock_window and self.mock_window.session == s and not stop:
+            self.mock_window.started_job(name)
         if not background and not stop:self.task=name
         if callback:self.callbacks[name]=callback
         self.refresh_jobs()
         self.status.set(f'{s.mode.upper()} | {name}')
         self.update_execute_button()
 
-    def request_stop(self,pump_only=False):
+    def request_stop(self,pump_only=False,session=None):
         # Dispatch to original motion domains even if settings were edited mid-run.
-        moving=self.processes.moving()
+        moving=[job for job in self.processes.moving() if session is None or job.session == session]
         try:
-            sessions=set(job.session for job in moving) or {self.session()}
+            sessions=set(job.session for job in moving) or {session or self.session()}
             for s in sessions:
                 for argv in (stop_commands()[1:] if pump_only else stop_commands()):
                     self.sequence+=1
@@ -499,7 +514,16 @@ class PrintingApp:
         for _ in range(200):
             try:event,name,value=self.processes.events.get_nowait()
             except queue.Empty:break
-            if event=='log':self.log(name,value)
+            if event=='log':
+                if name == 'Mock telemetry' and value.startswith('MOCK_STATE '):
+                    if self.mock_window:
+                        try:self.mock_window.feedback.accept(value)
+                        except (ValueError, TypeError, json.JSONDecodeError) as exc:self.log(name, str(exc))
+                else:
+                    self.log(name,value)
+                    job=self.processes.jobs.get(name)
+                    if self.mock_window and job and job.session == self.mock_window.session:
+                        self.mock_window.append(name,value)
             else:
                 self.log(name,f'Exited with code {value}')
                 job=self.processes.reap(name)
@@ -508,12 +532,14 @@ class PrintingApp:
                 if callback:
                     try:callback(value)
                     except (ValueError,OSError) as exc:self.log('GUI',str(exc));self.invalidate()
+                if self.mock_window and job and job.session == self.mock_window.session:
+                    self.mock_window.finished_job(name,value)
                 if job and job.kind=='background':self.invalidate()
                 if name.startswith('STOP request'):self.invalidate()
                 self.refresh_jobs()
                 self.update_execute_button()
                 self.status.set(self.get('mode').upper()+' | Ready' if not self.task else self.task)
-        self.root.after(100,self.poll)
+        self.poll_after = self.root.after(100,self.poll)
 
     def close(self):
         if self.processes.moving():
@@ -523,6 +549,9 @@ class PrintingApp:
         if self.processes.jobs:
             messagebox.showinfo('Background processes still running','Interrupt owned processes in the Session tab before closing. The console will not silently abandon robot/controller processes.')
             return
+        if self.mock_window:
+            self.mock_window.close()
+        self.root.after_cancel(self.poll_after)
         self.root.destroy()
 
 

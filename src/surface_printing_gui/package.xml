@@ -6,6 +6,10 @@
   <maintainer email="maintainer@example.com">Safwan Kamal</maintainer>
   <license>Apache-2.0</license>
   <exec_depend>python3-tk</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
   <exec_depend>surface_printing</exec_depend>
   <exec_depend>syringe_controller</exec_depend>
   <exec_depend>ur5e_moveit_cpp</exec_depend>

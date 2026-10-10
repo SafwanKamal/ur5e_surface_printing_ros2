@@ -566,6 +566,15 @@ ros2 run surface_printing_gui printing_gui \
 | Syringe | Finite dispense/retract actions, STOP and status |
 | Diagnostics | Nodes/controllers/joints/topics and optional RealSense/PCL launches |
 
+Click **Open mock verification** for a separate motion rehearsal window pinned to
+mock domain 78. It shows top/side projections of the requested CSV path and the
+live mock TCP trace, joint angles, planned/elapsed time, and explicit plan/check/
+execution outcomes. Connect its read-only telemetry monitor after launching the
+mock stack. Rehearsal uses the existing checked-plan executor with extrusion off;
+stale feedback cannot unlock its rehearsal button. RViz still shows the full arm,
+tool orientation and collision scene. Mock results do not transfer a plan or
+calibration approval to the physical session.
+
 The console starts in **mock mode/domain 78**. Physical mode defaults to domain
 77. Physical stack launch requires a robot-specific kinematics file. Serial pump
 launch/motion and extrusion are disabled in mock mode. Review the RViz path before

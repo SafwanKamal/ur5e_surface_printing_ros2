@@ -113,6 +113,48 @@ can run. Ubuntu `timeout` (coreutils) bounds stop-service clients to 8 s.
 
 ## Workflow
 
+### Dedicated mock motion verification
+
+Select **mock**, domain **78**, then click **Open mock verification** in the main
+toolbar. This opens a separate window pinned to that workspace/domain. Its
+controls share path/plan settings with the main tabs and reuse their plan/check
+gate. It never enables pump launch or extrusion.
+
+1. Confirm physical drivers are stopped and pump power is disconnected.
+2. Click **Launch mock robot + RViz** unless that stack already runs on domain 78.
+3. Click **Connect live mock state**. Wait for **LIVE** joint/TF feedback. The
+   read-only `mock_monitor` executable subscribes to `/joint_states` and TF;
+   it refuses domains other than 78. No joint or motion commands originate from
+   the telemetry node.
+4. Use RViz to position the mock tip at the desired start. A tube requires the
+   nozzle downward within 15 degrees. Choose shape/size and tube dimensions,
+   then **1. Capture at current mock tip**. The captured tube tip is on the
+   circumference; its center is diameter/2 toward world -X.
+5. Click **2. Plan + RViz preview** and review the complete arm/tool trajectory in
+   RViz. Click **3. Check saved plan** and acknowledge the review checkbox.
+6. Click **4. Rehearse on mock hardware**. Blue is the requested world-meter CSV
+   path; orange is the live TCP trace collected during that run. Green is the
+   current fresh TCP; gray indicates stale state. Top X/Y and side X/Z views keep
+   equal scale for the plotted axes. Joint angles come from live joint states.
+
+The progress bar estimates elapsed/planned time and stays below 100% while the
+executor runs. A completed result requires a successful executor exit plus fresh
+joint/TF samples during the run; it does not assert geometric accuracy, complete
+sample coverage or physical feasibility. Missing/stale feedback produces an
+unverified result, not a simulated success. Review the trace and RViz yourself.
+Changed files/settings require another plan/check. The monitor samples at 5 Hz;
+the trace is a sampled projection, not a full robot collision visualizer.
+
+**REQUEST MOCK ROBOT STOP** stays on the window's original mock domain, even if
+the main Session selection changes. A changed session disables its motion
+controls. Closing the mock window interrupts its read-only monitor; it leaves
+the robot stack/any owned executor visible in the main Session list. Use the
+stop controls and deliberately shut down the mock stack before launching the
+physical stack. Capture, plan and check again in the physical session; mock
+rehearsal does not establish physical calibration or unlock physical execution.
+
+### Main workflow
+
 1. **Session:** choose mock or physical mode. Mock is the default, domain 78;
    physical mode defaults to domain 77. Confirm physical drivers are stopped and
    pump power disconnected before launching the mock robot/RViz stack. The real

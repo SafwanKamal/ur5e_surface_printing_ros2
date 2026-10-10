@@ -9,5 +9,6 @@ setup(
     install_requires=['setuptools'], zip_safe=True,
     maintainer='Safwan Kamal', maintainer_email='maintainer@example.com',
     description='Desktop workflow console for UR5e surface printing', license='Apache-2.0',
-    entry_points={'console_scripts': ['printing_gui = surface_printing_gui.app:main']},
+    entry_points={'console_scripts': ['printing_gui = surface_printing_gui.app:main',
+                                     'mock_monitor = surface_printing_gui.mock_monitor:main']},
 )
