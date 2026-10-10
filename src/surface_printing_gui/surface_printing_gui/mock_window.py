@@ -6,7 +6,7 @@ import tkinter as tk
 from tkinter import ttk
 
 from .commands import ros_run
-from .mock_results import MockFeedback, path_length_mm, read_path
+from .mock_results import MockFeedback, path_length_mm, read_path, rehearsal_blockers
 
 
 class MockWindow:
@@ -24,7 +24,7 @@ class MockWindow:
         self.cached_duration = None
         self.window = tk.Toplevel(app.root)
         self.window.title('UR5e | Mock motion verification | Domain 78')
-        self.window.geometry('1160x900')
+        self.window.geometry('1160x980')
         self.window.minsize(960, 720)
         self.window.protocol('WM_DELETE_WINDOW', self.close)
         ttk.Label(self.window, text='MOCK HARDWARE  |  DOMAIN 78  |  EXTRUSION OFF',
@@ -50,7 +50,8 @@ class MockWindow:
         for key, label in [('shape', 'Shape'), ('size', 'Size / diameter (mm)'),
                            ('height', 'Tube height (mm)'), ('pitch', 'Tube pitch (mm)'),
                            ('tube_step', 'Tube spacing (mm)'), ('line', 'Line ID'),
-                           ('speed', 'TCP speed (mm/s)'), ('duration', 'Duration budget (s)')]:
+                           ('speed', 'TCP speed (mm/s)'), ('duration', 'Duration budget (s)'),
+                           ('flow', 'Flow budget (mL/min)'), ('volume', 'Volume budget (mL)')]:
             row = form.grid_size()[1]
             ttk.Label(form, text=label).grid(row=row, column=0, sticky='w', pady=3)
             if key == 'shape':
@@ -70,6 +71,9 @@ class MockWindow:
         ttk.Button(controls, text='REQUEST MOCK ROBOT STOP', command=self.stop).pack(fill='x', pady=6)
         self.summary = tk.StringVar(value='No path loaded')
         ttk.Label(plots, textvariable=self.summary, wraplength=700).pack(anchor='w', pady=6)
+        self.lock_reason = tk.StringVar(value='Rehearsal locked: checking prerequisites')
+        ttk.Label(plots, textvariable=self.lock_reason, wraplength=700,
+                  foreground='#9a3412').pack(anchor='w', pady=6)
         self.canvas = tk.Canvas(plots, bg='#0c1726', highlightthickness=0, height=340)
         self.canvas.pack(fill='both', expand=True)
         self.live = tk.StringVar(value='No live feedback')
@@ -225,9 +229,12 @@ class MockWindow:
             signature = self.app.signature()
         except OSError:
             signature = None
-        ready = (same and not busy and self.app.mock_isolated.get() and self.app.confirmed.get() and self.feedback.fresh() and
-                 self.app.gate.ready(signature))
-        self.execute.configure(state='normal' if ready else 'disabled')
+        blockers = rehearsal_blockers(same_session=same, busy=busy,
+                                     isolated=self.app.mock_isolated.get(), confirmed=self.app.confirmed.get(),
+                                     feedback=self.feedback, gate=self.app.gate, signature=signature)
+        self.lock_reason.set('REHEARSAL LOCKED: ' + '; '.join(blockers) if blockers else
+                             'READY: checked plan, review and fresh mock feedback available')
+        self.execute.configure(state='disabled' if blockers else 'normal')
         self.update_path()
         fresh = self.feedback.fresh()
         tcp = self.feedback.data.get('tcp')

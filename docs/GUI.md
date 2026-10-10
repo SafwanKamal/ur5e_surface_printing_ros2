@@ -135,6 +135,10 @@ gate. It never enables pump launch or extrusion.
    the nozzle downward within 15 degrees. Choose shape/size and tube dimensions,
    then **1. Capture at current mock tip**. The captured tube tip is on the
    circumference; its center is diameter/2 toward world -X.
+   For the nominal 10 mm diameter, 1 mm high, 0.5 mm pitch tube at 1 mm/s, use
+   a 100 s duration budget and 2 mL volume budget at the example 1 mL/min flow.
+   The existing executor validates these budgets even when mock extrusion is
+   off; its default 1 mL budget is insufficient for a roughly 63 s path.
 5. Click **2. Plan + RViz preview** and review the complete arm/tool trajectory in
    RViz. Click **3. Check saved plan** and acknowledge the review checkbox.
 6. Click **4. Rehearse on mock hardware**. Blue is the requested world-meter CSV
@@ -149,6 +153,14 @@ sample coverage or physical feasibility. Missing/stale feedback produces an
 unverified result, not a simulated success. Review the trace and RViz yourself.
 Changed files/settings require another plan/check. The monitor samples at 5 Hz;
 the trace is a sampled projection, not a full robot collision visualizer.
+
+If the rehearsal button stays disabled, read **REHEARSAL LOCKED** above the
+plots. It lists the missing successful plan/check, review/isolation checkbox,
+session mismatch or specific live-feedback problem. A check process returning
+an error does not unlock motion. Inspect its output below for time/volume,
+scene, start-state or model failures. Changing flow/time/volume budgets invalidates
+the prior job: plan and check again after changing them. **LIVE** feedback must
+also remain fresh; ticking the review checkbox alone does not unlock rehearsal.
 
 **REQUEST MOCK ROBOT STOP** stays on the window's original mock domain, even if
 the main Session selection changes. A changed session disables its motion

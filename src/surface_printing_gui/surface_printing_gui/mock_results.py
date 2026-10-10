@@ -66,14 +66,46 @@ class MockFeedback:
         return True
 
     def fresh(self, now=None):
+        return not self.blockers(now)
+
+    def blockers(self, now=None):
         now = time.monotonic() if now is None else now
-        return (self.received is not None and now - self.received <= 1.0 and
-                self.data.get('tcp') is not None and
-                self.data.get('joint_age') is not None and self.data['joint_age'] <= 0.5 and
-                self.data.get('tf_age') is not None and self.data['tf_age'] <= 0.5 and
-                bool(self.data.get('joints')))
+        if self.received is None:
+            return ['Connect live mock state: no monitor samples received']
+        reasons = []
+        if now - self.received > 1.0:
+            reasons.append('Live monitor stopped or its output is stale')
+        if not self.data.get('joints'):
+            reasons.append('No /joint_states received')
+        age = self.data.get('joint_age')
+        if age is None:
+            reasons.append('Joint timestamp missing or incompatible with ROS clock')
+        elif age > .5:
+            reasons.append(f'Joint feedback stale ({age:.2f}s)')
+        if self.data.get('tcp') is None:
+            reasons.append('No world -> probe_tcp transform available')
+        age = self.data.get('tf_age')
+        if age is None:
+            reasons.append('TCP transform timestamp unavailable')
+        elif age > .5:
+            reasons.append(f'TCP transform stale ({age:.2f}s)')
+        return reasons
 
     def start(self):
         self.trace = []
         self.samples = 0
         self.recording = True
+
+
+def rehearsal_blockers(*, same_session, busy, isolated, confirmed, feedback, gate, signature):
+    reasons = []
+    if not same_session:reasons.append('Restore the original mock/domain 78 session')
+    if busy:reasons.append('Wait for the current workflow step to finish')
+    if not isolated:reasons.append('Confirm physical drivers stopped and pump power off')
+    if signature is None or signature != gate.planned:
+        reasons.append('Create a successful plan for the current files/settings')
+    elif not gate.ready(signature):
+        reasons.append('Saved-plan check has not passed; inspect the check output')
+    if not confirmed:reasons.append('Tick the path/RViz review checkbox')
+    reasons.extend(feedback.blockers())
+    return reasons

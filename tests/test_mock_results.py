@@ -8,8 +8,9 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'src/surface_printing_gui'))
 from surface_printing_gui.mock_monitor import PREFIX, main
-from surface_printing_gui.mock_results import MockFeedback, path_length_mm, read_path
+from surface_printing_gui.mock_results import MockFeedback, path_length_mm, read_path, rehearsal_blockers
 from unittest.mock import patch
+from surface_printing_gui.commands import PlanGate
 
 
 class MockResults(unittest.TestCase):
@@ -60,3 +61,23 @@ class MockResults(unittest.TestCase):
         for domain in ('77', '0', ''):
             with patch.dict('os.environ', {'ROS_DOMAIN_ID': domain}):
                 with self.assertRaises(SystemExit):main()
+
+    def test_lock_explains_failed_check_and_missing_feedback(self):
+        feedback=MockFeedback()
+        gate=PlanGate()
+        signature=('job','plan')
+        gate.plan_finished(signature,True)
+        kwargs=dict(same_session=True,busy=False,isolated=True,confirmed=True,
+                    feedback=feedback,gate=gate,signature=signature)
+        reasons=rehearsal_blockers(**kwargs)
+        self.assertTrue(any('check has not passed' in reason for reason in reasons))
+        self.assertTrue(any('no monitor samples' in reason for reason in reasons))
+        gate.check_finished(signature,True)
+        feedback.accept(self.packet())
+        self.assertEqual(rehearsal_blockers(**kwargs),[])
+        feedback.accept(self.packet(tf_age=2))
+        self.assertTrue(any('TCP transform stale' in reason for reason in rehearsal_blockers(**kwargs)))
+        kwargs['same_session']=False
+        self.assertTrue(any('domain 78' in reason for reason in rehearsal_blockers(**kwargs)))
+        kwargs['signature']=('changed','plan')
+        self.assertTrue(any('current files/settings' in reason for reason in rehearsal_blockers(**kwargs)))
