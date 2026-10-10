@@ -70,6 +70,19 @@
             <geometry><cylinder radius="${2.2*max(pump['mesh_scale'][0],pump['mesh_scale'][1])}" length="${3.0*pump['mesh_scale'][2]}"/></geometry>
           </collision>
         </link>
+        <xacro:if value="${pump.get('needle_length_mm', 0.0) > 0.0}">
+          <link name="pump_needle_envelope">
+            <visual>
+              <origin xyz="${pump['syringe_outlet_cad_mm'][0]*pump['mesh_scale'][0]} ${pump['syringe_outlet_cad_mm'][1]*pump['mesh_scale'][1]} ${pump['syringe_outlet_cad_mm'][2]*pump['mesh_scale'][2]+(pump['needle_length_mm']-pump.get('needle_collision_tip_clearance_mm',2.0))/2000.0}"/>
+              <geometry><cylinder radius="${pump.get('needle_radius_mm',1.0)/1000.0}" length="${(pump['needle_length_mm']-pump.get('needle_collision_tip_clearance_mm',2.0))/1000.0}"/></geometry>
+              <material name="needle_metal"><color rgba="0.72 0.75 0.78 1"/></material>
+            </visual>
+            <collision>
+              <origin xyz="${pump['syringe_outlet_cad_mm'][0]*pump['mesh_scale'][0]} ${pump['syringe_outlet_cad_mm'][1]*pump['mesh_scale'][1]} ${pump['syringe_outlet_cad_mm'][2]*pump['mesh_scale'][2]+(pump['needle_length_mm']-pump.get('needle_collision_tip_clearance_mm',2.0))/2000.0}"/>
+              <geometry><cylinder radius="${pump.get('needle_radius_mm',1.0)/1000.0}" length="${(pump['needle_length_mm']-pump.get('needle_collision_tip_clearance_mm',2.0))/1000.0}"/></geometry>
+            </collision>
+          </link>
+        </xacro:if>
         <joint name="tool_to_sleeve_envelope" type="fixed">
           <parent link="probe_tool_link"/><child link="pump_sleeve_envelope"/>
           <origin xyz="${'%s %s %s' % (pump['mesh_xyz'][0], pump['mesh_xyz'][1], pump['mesh_xyz'][2])}" rpy="${'%s %s %s' % (pump['mesh_rpy'][0], pump['mesh_rpy'][1], pump['mesh_rpy'][2])}"/>
@@ -94,6 +107,12 @@
           <parent link="probe_tool_link"/><child link="pump_outlet_envelope"/>
           <origin xyz="${'%s %s %s' % (pump['mesh_xyz'][0], pump['mesh_xyz'][1], pump['mesh_xyz'][2])}" rpy="${'%s %s %s' % (pump['mesh_rpy'][0], pump['mesh_rpy'][1], pump['mesh_rpy'][2])}"/>
         </joint>
+        <xacro:if value="${pump.get('needle_length_mm', 0.0) > 0.0}">
+          <joint name="tool_to_needle_envelope" type="fixed">
+            <parent link="probe_tool_link"/><child link="pump_needle_envelope"/>
+            <origin xyz="${'%s %s %s' % (pump['mesh_xyz'][0], pump['mesh_xyz'][1], pump['mesh_xyz'][2])}" rpy="${'%s %s %s' % (pump['mesh_rpy'][0], pump['mesh_rpy'][1], pump['mesh_rpy'][2])}"/>
+          </joint>
+        </xacro:if>
       </xacro:if>
       <joint name="flange_to_probe_tool" type="fixed">
         <parent link="${parent_link}"/><child link="probe_tool_link"/>

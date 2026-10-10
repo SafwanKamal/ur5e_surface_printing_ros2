@@ -55,6 +55,12 @@ class CoarseCollisionEnvelopeTests(unittest.TestCase):
         self.assertIn("pump['tcp_xyz']", XACRO)
         self.assertIn("pump['tcp_rpy']", XACRO)
 
+    def test_thin_needle_is_collision_checked_and_tip_is_clear(self):
+        self.assertIn('name="pump_needle_envelope"', XACRO)
+        self.assertIn("pump.get('needle_radius_mm',1.0)/1000.0", XACRO)
+        self.assertIn("needle_collision_tip_clearance_mm", XACRO)
+        self.assertIn("envelope_names.add('pump_needle_envelope')", VALIDATOR)
+
 
 if __name__ == "__main__":
     unittest.main()
