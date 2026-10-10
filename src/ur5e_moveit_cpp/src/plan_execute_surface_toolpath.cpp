@@ -93,7 +93,7 @@ std::map<std::string, double> resolveCollisionFreeIk(
   const std::string& planning_frame,
   const std::string& tcp_link,
   const geometry_msgs::msg::Pose& target_pose,
-  const moveit::core::RobotState& seed_state,
+  const moveit::core::RobotState* seed_state,
   const std::vector<std::string>& active_joint_names,
   double timeout_seconds,
   int line_id)
@@ -121,11 +121,14 @@ std::map<std::string, double> resolveCollisionFreeIk(
   request->ik_request.pose_stamped.pose = target_pose;
 
   request->ik_request.robot_state.is_diff = true;
-  request->ik_request.robot_state.joint_state.name =
-    active_joint_names;
-  seed_state.copyJointGroupPositions(
-    planning_group,
-    request->ik_request.robot_state.joint_state.position);
+  if (seed_state != nullptr)
+  {
+    request->ik_request.robot_state.joint_state.name =
+      active_joint_names;
+    seed_state->copyJointGroupPositions(
+      planning_group,
+      request->ik_request.robot_state.joint_state.position);
+  }
 
   const auto timeout_nanoseconds =
     static_cast<std::int64_t>(
@@ -2223,28 +2226,14 @@ int main(int argc, char* argv[])
            retry <= approach_retries;
            ++retry)
       {
-        std::shared_ptr<moveit::core::RobotState>
-          approach_start_state;
-
         if (planned_state)
         {
-          approach_start_state =
-            std::make_shared<moveit::core::RobotState>(
-              *planned_state);
+          move_group.setStartState(*planned_state);
         }
         else
         {
-          approach_start_state =
-            move_group.getCurrentState(10.0);
-
-          if (!approach_start_state)
-          {
-            throw std::runtime_error(
-              "Could not obtain the current robot state");
-          }
+          move_group.setStartStateToCurrentState();
         }
-
-        move_group.setStartState(*approach_start_state);
 
         const auto joint_targets =
           resolveCollisionFreeIk(
@@ -2253,7 +2242,7 @@ int main(int argc, char* argv[])
             planning_frame,
             tcp_link,
             approach_target,
-            *approach_start_state,
+            planned_state.get(),
             active_joint_names,
             std::min(5.0, planning_time),
             line_id);
