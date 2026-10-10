@@ -8,7 +8,7 @@ from pathlib import Path
 import rclpy
 from moveit_msgs.srv import GetPositionFK
 from .common import WorkNode
-from .demo_safety import calibrated_tool, live_model
+from .demo_safety import validate_tube_tool, live_model
 from .tube_geometry import tube_points, normalized_orientation
 
 
@@ -18,10 +18,11 @@ def run(node):
     pitch = float(node.parameter('pitch_mm', 0.5))
     step = float(node.parameter('step_mm', 0.25))
     output = Path(node.parameter('output_path', '/tmp/tube_10mm.csv'))
+    simulation = bool(node.parameter('simulation', False))
     # Validate sizing before querying any live state.
     tube_points((0., 0., 0.), diameter, height, pitch, step)
     xml, _ = live_model(node)
-    calibrated_tool(xml)
+    validate_tube_tool(xml, simulation=simulation)
     client = node.create_client(GetPositionFK, '/compute_fk')
     if not client.wait_for_service(timeout_sec=5):
         raise RuntimeError('MoveIt /compute_fk unavailable')

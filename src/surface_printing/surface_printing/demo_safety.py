@@ -25,10 +25,10 @@ def live_model(node):
     return xml, digest
 
 
-def calibrated_tool(xml):
+def calibrated_tool(xml, *, require_calibration=True):
     path=Path(get_package_share_directory('ur5e_toolheads'))/'config/printing_tool.yaml'
     config=yaml.safe_load(path.read_text())
-    if config.get('enabled') is not True or config.get('calibrated') is not True:
+    if config.get('enabled') is not True or (require_calibration and config.get('calibrated') is not True):
         raise RuntimeError('Enable and calibrate printing_tool.yaml, rebuild, then restart robot/MoveIt')
     root=ET.fromstring(xml)
     axial_length=float(config.get('axial_nozzle_length_mm',0.0))
@@ -180,6 +180,16 @@ def check_scene(node, trajectory, group):
         req.robot_state.joint_state.position=point.positions
         if not node.wait(client.call_async(req), 3).valid:
             raise RuntimeError(f'Current planning scene rejects trajectory point {index}')
+
+
+def validate_tube_tool(xml, *, simulation=False):
+    if simulation:
+        # A simulation flag must never bypass calibration on physical hardware.
+        require_mock_model(xml)
+        calibrated_tool(xml, require_calibration=False)
+    else:
+        require_real_model(xml)
+        calibrated_tool(xml)
 
 
 def require_mock_model(xml):

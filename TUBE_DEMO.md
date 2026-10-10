@@ -61,6 +61,14 @@ source /opt/ros/jazzy/setup.bash && source "$HOME/ur5e_ws/install/setup.bash" &&
 
 ## Capture and plan (no motion or extrusion)
 
+For mock-only tube capture, run the demo stack and all preview commands in
+`ROS_DOMAIN_ID=78`, position the mock nozzle downward, and add
+`-p simulation:=true` to `make_tube_path`. This checks the live mock hardware
+plugin and all configured tool geometry without requiring `calibrated: true`.
+Physical capture defaults to `simulation:=false` and still requires the live UR
+driver model and verified physical calibration. Never relabel a tool calibrated
+solely to generate a simulation path.
+
 Manually place the tip on the intended circle rim at the first-layer height.
 Orient it downward first; then position the tip. Capture once. Use the same CSV
 for preview and execution. Coordinates are already in world meters for the
