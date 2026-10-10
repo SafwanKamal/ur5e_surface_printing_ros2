@@ -9,16 +9,24 @@ are examples to replace with measured values.
 ## Update, build and select the environment
 
 ```bash
-cd ~/ur5e_ws
-git status --short
-git fetch origin
-git switch main
-git pull --ff-only origin main
-source /opt/ros/jazzy/setup.bash
-rosdep install --from-paths src --ignore-src -r -y
-colcon build --symlink-install
-source install/setup.bash
+(
+  set -e
+  cd ~/ur5e_ws
+  git status --short
+  git fetch origin
+  git switch main
+  git merge --ff-only origin/main
+  source /opt/ros/jazzy/setup.bash
+  rosdep install --from-paths src --ignore-src -y --skip-keys warehouse_ros_mongo
+  colcon build --symlink-install
+)
+source ~/ur5e_ws/install/setup.bash
 ```
+
+The build block stops on the first failure. If tool calibration blocks switching
+branches, use the [calibration-preserving recovery](GUI.md#recover-when-a-local-tool-calibration-blocks-switching-to-main).
+The skipped MongoDB warehouse backend is not needed by the GUI/robot workflow;
+it must be installed separately to use `warehouse_db.launch.py`.
 
 Build a subset with its workspace dependencies, avoiding a missing generated
 `syringe_interfaces` package on a fresh workspace:

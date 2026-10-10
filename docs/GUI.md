@@ -7,20 +7,63 @@ Commands are argv lists without a shell; their output appears in one console.
 
 ## Install and launch
 
+For a clean checkout, run the block below. The subshell stops on the first
+failure, so a failed branch switch cannot silently build the old branch.
+
 ```bash
-cd ~/ur5e_ws
-git fetch origin
-git switch main
-git pull --ff-only origin main
-source /opt/ros/jazzy/setup.bash
-sudo apt install python3-tk
-rosdep install --from-paths src --ignore-src -r -y
-colcon build --symlink-install --packages-up-to surface_printing_gui
-source install/setup.bash
-ros2 run surface_printing_gui printing_gui \
-  --workspace "$HOME/ur5e_ws" \
-  --pipeline "$HOME/Surface_printing_path_generation_pipeline"
+(
+  set -e
+  cd ~/ur5e_ws
+  git fetch origin
+  git switch main
+  git merge --ff-only origin/main
+  source /opt/ros/jazzy/setup.bash
+  sudo apt install python3-tk
+  rosdep install --from-paths src --ignore-src -y --skip-keys warehouse_ros_mongo
+  colcon build --symlink-install --packages-up-to surface_printing_gui
+  source install/setup.bash
+  ros2 run surface_printing_gui printing_gui \
+    --workspace "$HOME/ur5e_ws" \
+    --pipeline "$HOME/Surface_printing_path_generation_pipeline"
+)
 ```
+
+`warehouse_ros_mongo` is the MongoDB backend declared by the generated MoveIt
+configuration. Skip it for the GUI/robot workflow when rosdep cannot resolve it.
+This does not install the backend needed by `warehouse_db.launch.py`; install that
+separately if you use the database warehouse. Other unresolved dependencies stop
+this installation block.
+
+### Recover when a local tool calibration blocks switching to main
+
+If Git names `src/ur5e_toolheads/config/printing_tool.yaml` as the modified file,
+use this update block first. It copies your exact calibration outside the repo,
+stashes only that file, switches to main, and restores your calibration. It keeps
+the stash as a second backup and retains commits on your previous branch.
+
+```bash
+(
+  set -e
+  cd ~/ur5e_ws
+  ur5e_backup_dir=$(mktemp -d "$HOME/ur5e-config-backup.XXXXXX")
+  cp -- src/ur5e_toolheads/config/printing_tool.yaml "$ur5e_backup_dir/printing_tool.yaml"
+  printf 'Calibration backup: %s\n' "$ur5e_backup_dir/printing_tool.yaml"
+  git stash push -m "Preserve local tool calibration before GUI update" -- \
+    src/ur5e_toolheads/config/printing_tool.yaml
+  git fetch origin
+  git switch main
+  git merge --ff-only origin/main
+  cp -- "$ur5e_backup_dir/printing_tool.yaml" src/ur5e_toolheads/config/printing_tool.yaml
+  test -f src/surface_printing_gui/package.xml
+)
+```
+
+If this stops at a Git step, the backup and stash remain available. Do not reset
+or discard calibration to force the update. Inspect `git status --short`,
+`git branch --show-current`, and `git log --oneline --left-right main...origin/main`
+before resolving a divergent local main or other modified files. After a
+successful recovery, run the install block above; restoring calibration while
+already on main will not prevent `git switch main`.
 
 Clone/update the companion geometry repository and run `uv sync --locked` there
 before using Geometry. `uv` must be on PATH. The selected ROS workspace must be

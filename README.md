@@ -363,7 +363,11 @@ Expected result:
 └── README.md
 ```
 
-Install unresolved ROS dependencies:
+Install unresolved ROS dependencies. The MongoDB warehouse backend is optional
+for the GUI/robot workflow and is skipped below because its rosdep key may be
+unavailable on Jazzy; install it separately if using `warehouse_db.launch.py`.
+For an existing checkout, follow the [GUI update/recovery guide](docs/GUI.md#install-and-launch)
+to preserve local tool calibration and stop if a Git update fails.
 
 ```bash
 cd ~/ur5e_ws
@@ -372,7 +376,7 @@ source /opt/ros/jazzy/setup.bash
 rosdep install \
   --from-paths src \
   --ignore-src \
-  -r \
+  --skip-keys warehouse_ros_mongo \
   -y
 ```
 
@@ -385,7 +389,7 @@ Build all eight repository packages and their generated interfaces:
 ```bash
 cd ~/ur5e_ws
 source /opt/ros/jazzy/setup.bash
-rosdep install --from-paths src --ignore-src -r -y
+rosdep install --from-paths src --ignore-src -y --skip-keys warehouse_ros_mongo
 colcon build --symlink-install
 source install/setup.bash
 ```
