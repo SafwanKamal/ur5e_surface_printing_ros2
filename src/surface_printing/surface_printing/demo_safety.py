@@ -48,10 +48,13 @@ def calibrated_tool(xml):
 
     needle_length=float(config.get('needle_length_mm',0.0))
     needle_radius=float(config.get('needle_radius_mm',1.0))
+    needle_base_clearance=float(config.get('needle_collision_base_clearance_mm',1.0))
     needle_tip_clearance=float(config.get('needle_collision_tip_clearance_mm',2.0))
-    if (not all(math.isfinite(v) for v in (needle_length,needle_radius,needle_tip_clearance)) or
+    if (not all(math.isfinite(v) for v in
+            (needle_length,needle_radius,needle_base_clearance,needle_tip_clearance)) or
             needle_length<0 or needle_length>200 or needle_radius<=0 or
-            needle_tip_clearance<0 or needle_tip_clearance>=needle_length and needle_length>0):
+            needle_base_clearance<0 or needle_tip_clearance<0 or
+            needle_base_clearance+needle_tip_clearance>=needle_length and needle_length>0):
         raise RuntimeError('Invalid configured needle collision geometry')
     envelope_names={
         'pump_sleeve_envelope','pump_body_envelope','pump_tip_stem_envelope',
@@ -76,12 +79,13 @@ def calibrated_tool(xml):
             'pump_outlet_envelope':('cylinder',(96.74983,1081.4002,324.55),(2.2,3.0)),
         }
         if needle_length>0:
-            collision_length=(needle_length-needle_tip_clearance)/1000.0
+            collision_length=(needle_length-needle_base_clearance-needle_tip_clearance)/1000.0
+            collision_center=(needle_base_clearance/1000.0)+collision_length/2.0
             outlet=config['syringe_outlet_cad_mm']
             specs['pump_needle_envelope']=(
                 'cylinder',
                 (float(outlet[0]),float(outlet[1]),
-                 float(outlet[2])+collision_length/(2.0*expected_scale[2])),
+                 float(outlet[2])+collision_center/expected_scale[2]),
                 ((needle_radius/1000.0)/max(expected_scale[:2]),
                  collision_length/expected_scale[2]))
         for name,(kind,cad_xyz,dims) in specs.items():

@@ -73,13 +73,13 @@
         <xacro:if value="${pump.get('needle_length_mm', 0.0) > 0.0}">
           <link name="pump_needle_envelope">
             <visual>
-              <origin xyz="${pump['syringe_outlet_cad_mm'][0]*pump['mesh_scale'][0]} ${pump['syringe_outlet_cad_mm'][1]*pump['mesh_scale'][1]} ${pump['syringe_outlet_cad_mm'][2]*pump['mesh_scale'][2]+(pump['needle_length_mm']-pump.get('needle_collision_tip_clearance_mm',2.0))/2000.0}"/>
-              <geometry><cylinder radius="${pump.get('needle_radius_mm',1.0)/1000.0}" length="${(pump['needle_length_mm']-pump.get('needle_collision_tip_clearance_mm',2.0))/1000.0}"/></geometry>
+              <origin xyz="${pump['syringe_outlet_cad_mm'][0]*pump['mesh_scale'][0]} ${pump['syringe_outlet_cad_mm'][1]*pump['mesh_scale'][1]} ${pump['syringe_outlet_cad_mm'][2]*pump['mesh_scale'][2]+(pump.get('needle_collision_base_clearance_mm',1.0)+(pump['needle_length_mm']-pump.get('needle_collision_base_clearance_mm',1.0)-pump.get('needle_collision_tip_clearance_mm',2.0))/2.0)/1000.0}"/>
+              <geometry><cylinder radius="${pump.get('needle_radius_mm',1.0)/1000.0}" length="${(pump['needle_length_mm']-pump.get('needle_collision_base_clearance_mm',1.0)-pump.get('needle_collision_tip_clearance_mm',2.0))/1000.0}"/></geometry>
               <material name="needle_metal"><color rgba="0.72 0.75 0.78 1"/></material>
             </visual>
             <collision>
-              <origin xyz="${pump['syringe_outlet_cad_mm'][0]*pump['mesh_scale'][0]} ${pump['syringe_outlet_cad_mm'][1]*pump['mesh_scale'][1]} ${pump['syringe_outlet_cad_mm'][2]*pump['mesh_scale'][2]+(pump['needle_length_mm']-pump.get('needle_collision_tip_clearance_mm',2.0))/2000.0}"/>
-              <geometry><cylinder radius="${pump.get('needle_radius_mm',1.0)/1000.0}" length="${(pump['needle_length_mm']-pump.get('needle_collision_tip_clearance_mm',2.0))/1000.0}"/></geometry>
+              <origin xyz="${pump['syringe_outlet_cad_mm'][0]*pump['mesh_scale'][0]} ${pump['syringe_outlet_cad_mm'][1]*pump['mesh_scale'][1]} ${pump['syringe_outlet_cad_mm'][2]*pump['mesh_scale'][2]+(pump.get('needle_collision_base_clearance_mm',1.0)+(pump['needle_length_mm']-pump.get('needle_collision_base_clearance_mm',1.0)-pump.get('needle_collision_tip_clearance_mm',2.0))/2.0)/1000.0}"/>
+              <geometry><cylinder radius="${pump.get('needle_radius_mm',1.0)/1000.0}" length="${(pump['needle_length_mm']-pump.get('needle_collision_base_clearance_mm',1.0)-pump.get('needle_collision_tip_clearance_mm',2.0))/1000.0}"/></geometry>
             </collision>
           </link>
         </xacro:if>
