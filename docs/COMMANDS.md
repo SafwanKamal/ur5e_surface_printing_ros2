@@ -42,6 +42,25 @@ source ~/ur5e_ws/install/setup.bash
 export ROS_DOMAIN_ID=78   # mock; use 77 for the physical lab stack
 ```
 
+## Desktop console
+
+The same bounded workflows are now available in a desktop GUI. Source the built
+workspace first, then:
+
+```bash
+sudo apt install python3-tk
+colcon build --symlink-install --packages-up-to surface_printing_gui
+source install/setup.bash
+ros2 run surface_printing_gui printing_gui \
+  --workspace "$HOME/ur5e_ws" \
+  --pipeline "$HOME/Surface_printing_path_generation_pipeline"
+```
+
+It starts in mock mode and requires a successful plan/check of the unchanged job
+before execution. See [GUI.md](GUI.md) for included operations, process ownership,
+stop behavior and advanced workflows that still use the CLI. RViz remains the 3D
+preview. No hardware starts automatically when opening the console.
+
 ## Launch and inspect
 
 Mock robot, MoveIt, controllers and RViz (pump power disconnected, real drivers stopped):
