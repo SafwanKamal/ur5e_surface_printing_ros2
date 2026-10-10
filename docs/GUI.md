@@ -70,6 +70,36 @@ before using Geometry. `uv` must be on PATH. The selected ROS workspace must be
 sourced in the parent terminal; selecting a folder in the GUI does not source it.
 The GUI checks the inherited `AMENT_PREFIX_PATH` before running ROS commands.
 
+### Recover a stale toolheads build after the configuration archive move
+
+An incremental symlink build from an older checkout can fail with
+`can't copy .../build/ur5e_toolheads/config/printing_tool.pre_calibrated_backup.yaml`.
+That archived snapshot now lives under `docs/archive/tool-config`; an old build
+directory can still contain a dangling link matched by the configuration glob.
+Move aside only this package's generated build/install folders and rebuild:
+
+```bash
+(
+  set -e
+  cd ~/ur5e_ws
+  ur5e_build_backup=$(mktemp -d "$HOME/ur5e-build-backup.XXXXXX")
+  for ur5e_generated_dir in build/ur5e_toolheads install/ur5e_toolheads; do
+    if [ -e "$ur5e_generated_dir" ] || [ -L "$ur5e_generated_dir" ]; then
+      mv -- "$ur5e_generated_dir" "$ur5e_build_backup/$(dirname "$ur5e_generated_dir")-ur5e_toolheads"
+    fi
+  done
+  source /opt/ros/jazzy/setup.bash
+  colcon build --symlink-install --packages-up-to surface_printing_gui
+  source install/setup.bash
+  ros2 run surface_printing_gui printing_gui \
+    --workspace "$HOME/ur5e_ws" \
+    --pipeline "$HOME/Surface_printing_path_generation_pipeline"
+)
+```
+
+This retains the old generated folders as backups. It does not move or edit
+`src/ur5e_toolheads/config/printing_tool.yaml` or clear unrelated packages.
+
 For source-only UI development without installing the ROS package:
 
 ```bash
