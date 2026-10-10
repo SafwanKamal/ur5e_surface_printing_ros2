@@ -69,7 +69,7 @@ If changing profile constants, update `motion_profile.py` to match and rerun tes
 
 ## Installation
 
-After checking out the integration branch on the desktop, upload the sketch in
+After updating `main` on the desktop, upload the sketch in
 Arduino IDE (Mega 2560 and the correct port), then:
 
 ```bash
@@ -84,7 +84,7 @@ stop behavior and protocol, not driver polarity, AVR execution timing, motor
 following or physical extrusion. Validate at low speed unloaded before pressure
 loads. Existing fault reset requirements and physical interlock setup still apply.
 
-Validation on demo/coarse-collision: 54 Python tests and the firmware host-simulation
+Historical validation before integration: 54 Python tests and the firmware host-simulation
 checks passed. The sketch and complete Arduino AVR core 1.8.6 compiled and linked
 for ATmega2560 with that core's indexed AVR GCC toolchain: 11140 bytes program,
 1189 bytes static RAM. No physical motor/driver or ROS hardware session was tested.

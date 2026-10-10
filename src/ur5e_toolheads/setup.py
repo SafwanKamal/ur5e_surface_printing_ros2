@@ -9,7 +9,7 @@ setup(
     version='0.0.0',
     packages=find_packages(),
     data_files=[
-        ('share/ur5e_toolheads/config', glob('config/*')),
+        ('share/ur5e_toolheads/config', glob('config/*.yaml')),
         (
             'share/ament_index/resource_index/packages',
             ['resource/' + package_name],

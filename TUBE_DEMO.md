@@ -15,10 +15,11 @@ proof that your current liquid will support a freestanding tube.
 ## Pull and build
 
 Stop active robot/pump execution first. These commands preserve your local YAML.
-This update does not edit `printing_tool.yaml` or auto-mark it calibrated.
+Preserve and compare your local `printing_tool.yaml` before updating. Git does not
+merge different physical calibrations semantically; rebuild/restart after changes.
 
 ```bash
-cd "$HOME/ur5e_ws" && git pull --ff-only origin demo/coarse-collision
+cd "$HOME/ur5e_ws" && git pull --ff-only origin main
 ```
 
 ```bash
@@ -99,10 +100,12 @@ Choose a low verified flow for the actual liquid. Watch the first turn
 and stop if material pools, the tip drags, or the structure cannot support itself.
 
 ```bash
-source /opt/ros/jazzy/setup.bash && source "$HOME/ur5e_ws/install/setup.bash" && export ROS_DOMAIN_ID=77 && read -r -p 'Verified extrusion flow (ml/min): ' TUBE_FLOW && ros2 run surface_printing hardware_preflight && ros2 run surface_printing execute_surface_print --ros-args -p trajectory_path:=/tmp/tube_plan.yaml -p simulation:=false -p execute:=true -p extrude:=true -p flow_ml_per_min:="$TUBE_FLOW" -p max_duration_sec:=300.0 -p max_volume_ml:=2.0 -p start_tolerance_rad:=0.005 -p hardware_confirmed:=true
+source /opt/ros/jazzy/setup.bash && source "$HOME/ur5e_ws/install/setup.bash" && export ROS_DOMAIN_ID=77 && read -r -p 'Verified extrusion flow (ml/min): ' TUBE_FLOW && ros2 run surface_printing hardware_preflight && ros2 run surface_printing execute_surface_print --ros-args -p trajectory_path:=/tmp/tube_plan.yaml -p simulation:=false -p execute:=true -p extrude:=true -p flow_ml_per_min:="$TUBE_FLOW" -p max_duration_sec:=100.0 -p max_volume_ml:=2.0 -p start_tolerance_rad:=0.005 -p hardware_confirmed:=true
 ```
 
-The limits may reject a tall tube; do not disable them blindly. Start short and
+The executor hard ceiling is 100 seconds, including speed scaling and budget
+margin. At 2 mm/s, a 10 mm diameter, 1 mm height, 0.5 mm pitch helix is already
+about 31.4 seconds before scaling. The limits may reject a tall tube; do not disable them blindly. Start short and
 review planned duration and extrusion volume before increasing limits.
 
 Pump stop in another sourced terminal (does not stop robot motion):

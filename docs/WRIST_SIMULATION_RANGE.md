@@ -1,7 +1,20 @@
-# Wrist 3 simulation range
+# Wrist 3 configured range
 
-The mock demo now uses -pi to +pi radians (-180 to +180 degrees) for wrist_3_joint instead of +/-5 degrees. This is a bounded simulation experiment, not validated hardware clearance. The Python planner, trajectory checks, interpolated TCP-speed checks and simulation executor use the same installed joint_limits.yaml. Angles are not wrapped.
+`joint_limits.yaml` currently permits -pi to +pi radians for `wrist_3_joint`.
+`wrist_guard.load_bounds()` uses the same finite range for mock and physical
+execution, including interpolated TCP-speed checks. Angles are not wrapped.
+Earlier documentation described a hardware-only 10-degree gate; that gate is
+not present in the current implementation.
 
-No collision geometry or allowed-collision pairs are changed. Allowed pairs remain ignored at all angles; a successful plan therefore does not establish physical clearance. The Python hardware executor rejects a configured range wider than 10 degrees. Existing calibration and mock-model guards remain in effect.
+This is a provisional range, not measured hardware clearance. Verify the entire
+pump/needle/tubing sweep and the SRDF allowed-collision pairs before physical use.
+Narrow the source bounds if the assembly needs them, rebuild
+`ur5e_probe_moveit_config` and restart the stack. Confirm live MoveIt limits:
 
-Rebuild ur5e_probe_moveit_config and surface_printing, restart the demo, re-add the saddle collision object and create fresh plans. Check the live MoveIt robot_description_planning.joint_limits.wrist_3_joint.min_position and max_position parameters; expected values are -3.141592653589793 and +3.141592653589793. Test the saddle approach with execute:=false first.
+```bash
+ros2 param get /move_group robot_description_planning.joint_limits.wrist_3_joint.min_position
+ros2 param get /move_group robot_description_planning.joint_limits.wrist_3_joint.max_position
+```
+
+Re-add workpiece/fixture collisions and create fresh plans after model changes.
+A successful sampled collision check does not establish continuous clearance.

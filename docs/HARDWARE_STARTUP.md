@@ -1,8 +1,8 @@
 # First physical UR5e motion
 
-This procedure stops at a 5 mm, 1 mm/s motion-only rehearsal. The saddle executor
-is deliberately simulation-only until the physical saddle pose is measured and
-its TCP speed is independently bounded. Do not use `confirm_mock_hardware` with a
+This procedure stops at a 5 mm, 1 mm/s motion-only rehearsal. The saddle executor defaults to simulation and also has an explicit physical
+mode. Use its mock workflow first; physical saddle use still requires measured
+registration and independent TCP-speed validation. Do not use `confirm_mock_hardware` with a
 real controller.
 
 ## 1. Pull and build
@@ -13,8 +13,8 @@ calibration edits before switching branches.
 ```bash
 cd ~/ur5e_ws
 git fetch origin
-git switch demo/coarse-collision
-git pull --ff-only origin demo/coarse-collision
+git switch main
+git pull --ff-only origin main
 
 source /opt/ros/jazzy/setup.bash
 rosdep install --from-paths src --ignore-src -r -y
@@ -46,8 +46,8 @@ With robot and pump power safely controlled:
 
 1. Confirm the printed holder is rigid on the flange and cannot rotate or slide.
 2. Confirm the displayed STL orientation matches the physical holder and syringe.
-3. Measure the syringe-end TCP (needle length is currently zero) and verify it in
-   RViz. Configure the pendant payload, centre of gravity, and TCP separately.
+3. Measure the installed nozzle TCP and verify it in RViz. The committed YAML
+   currently has a 200 mm CAD-axis extension; do not assume this matches your tool. Configure the pendant payload, centre of gravity, and TCP separately.
 4. Check the conservative six-primitive collision envelope covers the complete
    moving apparatus, tubing, and plunger throughout their travel.
 5. Place the nozzle in a clear, reachable pose with generous table/robot clearance.

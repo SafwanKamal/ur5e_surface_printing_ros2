@@ -1,6 +1,6 @@
 # Syringe path-printing demo
 
-This branch supplies a bounded, constant-flow demo, not closed-loop material
+The integrated `main` branch supplies a bounded, constant-flow demo, not closed-loop material
 control. Start with one 30 mm straight line. Default requested flow is 1 mL/min
 (about 0.972 mL/min after integer pulse-rate rounding with the current calibration).
 The Cartesian speed cap is 2 mm/s before UR speed scaling. Acceleration, corners,
@@ -40,32 +40,30 @@ testing, watchdog controls and the updated motion profile.
 
 ## Get and build
 
-In your existing repository, first preserve any local changes. Do not use a hard
-reset to resolve divergence. These commands assume it is `~/ur5e_ws/src`:
+The repository itself is the workspace root, `~/ur5e_ws`, with packages under
+`src/`. Preserve any local lab/calibration changes before switching to `main`:
 
 ```bash
-cd ~/ur5e_ws/src
- git fetch origin
- git switch demo/syringe-print
- git pull --ff-only origin demo/syringe-print
 cd ~/ur5e_ws
+git fetch origin
+git switch main
+git pull --ff-only origin main
 source /opt/ros/jazzy/setup.bash
 rosdep install --from-paths src --ignore-src -r -y
-colcon build --symlink-install --packages-select syringe_interfaces syringe_controller ur5e_toolheads ur5e_probe_moveit_config surface_printing
+colcon build --symlink-install --packages-up-to surface_printing ur5e_moveit_cpp
 source install/setup.bash
 ```
 
-If the branch is not yet local, `git switch --track origin/demo/syringe-print`
-creates it. If an existing local demo branch has diverged, reconcile it before
-building; do not discard lab changes. Edit the source `printing_tool.yaml`, rebuild
-and restart all description/MoveIt launches after calibration changes.
+Edit the source `printing_tool.yaml`, rebuild and restart all description/MoveIt
+launches after calibration changes. Follow [HARDWARE_STARTUP.md](HARDWARE_STARTUP.md)
+for robot-specific calibration and physical startup.
 
 ## Start the stack (separate terminals)
 
 Source ROS and `~/ur5e_ws/install/setup.bash` in each terminal. Use your actual IPs:
 
 ```bash
-ros2 launch ur5e_probe_moveit_config real_robot.launch.py robot_ip:=192.168.1.102 reverse_ip:=192.168.1.100
+ros2 launch ur5e_probe_moveit_config real_robot.launch.py robot_ip:=192.168.1.102 reverse_ip:=192.168.1.100 kinematics_params_file:="$HOME/ur5e_calibration.yaml"
 ```
 
 Run the pendant External Control program using the existing lab setup. Confirm
@@ -234,8 +232,8 @@ and expected deposited volume.
 
 ## Validation scope
 
-Development checks: 23 Python tests (serial faults, geometry, budgets, trajectory
-validation and executor monitor branches), nine firmware scenarios using a C++
+Development checks: 59 Python tests (serial faults, geometry, budgets, trajectory
+validation and executor monitor branches), firmware scenarios using a C++
 Arduino shim, and Python syntax compilation. The monitor tests load the production
 methods without ROS imports; they do not exercise ROS transport/executors.
 No ROS Jazzy/MoveIt installation, AVR cross-compiler, physical UR5e or syringe was

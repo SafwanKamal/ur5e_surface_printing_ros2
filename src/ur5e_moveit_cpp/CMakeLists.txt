@@ -9,6 +9,7 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(moveit_ros_planning_interface REQUIRED)
+find_package(moveit_core REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(moveit_msgs REQUIRED)
 find_package(shape_msgs REQUIRED)
@@ -244,3 +245,6 @@ install(
   DIRECTORY data meshes
   DESTINATION share/${PROJECT_NAME}
 )
+
+# Register the package and export its installed share/ament index metadata.
+ament_package()
