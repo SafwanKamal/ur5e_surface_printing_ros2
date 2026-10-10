@@ -161,6 +161,19 @@ class SerialBackend:
 
             return success
 
+    def restore_watchdog(self):
+        """Restore testing overrides before exposing ROS motion APIs."""
+        with self.command_lock:
+            with self.cv:
+                if self.owner is not None or self.moving or self.fault:
+                    return False
+            for command in ("WATCHDOG TIMEOUT 1500", "WATCHDOG ON"):
+                if not self._ack(command, "WATCHDOG"):
+                    self.fail("Watchdog setup unconfirmed; relaunch required")
+                    self._stop_locked()
+                    return False
+            return True
+
     def start(self, command, owner):
         with self.command_lock:
             with self.cv:

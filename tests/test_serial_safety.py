@@ -58,6 +58,19 @@ class SerialSafety(unittest.TestCase):
         time.sleep(.14)
         self.assertIn('STOP',self.port.commands)
         self.assertTrue(self.backend.snapshot()['fault'])
+    def test_restore_watchdog_before_motion(self):
+        self.assertTrue(self.backend.restore_watchdog())
+        self.assertEqual(self.port.commands[-2:],
+                         ['WATCHDOG TIMEOUT 1500', 'WATCHDOG ON'])
+        self.backend.reserve('action')
+        self.assertFalse(self.backend.restore_watchdog())
+
+    def test_restore_watchdog_failure_latches_and_stops(self):
+        self.port.reply = False
+        self.assertFalse(self.backend.restore_watchdog())
+        self.assertIn('STOP', self.port.commands)
+        self.assertTrue(self.backend.snapshot()['fault'])
+
     def test_calibration_rounding_and_direction(self):
         cal=Calibration()
         self.assertEqual(cal.volume(2),-1111)

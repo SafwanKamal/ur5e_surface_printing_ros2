@@ -7,12 +7,17 @@ The Cartesian speed cap is 2 mm/s before UR speed scaling. Acceleration, corners
 pressure lag and the delay until measured motion starts can change bead width.
 Do not present this as fully synchronized or validated conformal printing.
 
+See [ramped firmware commands and installation](SYRINGE_FIRMWARE.md) for manual
+testing, watchdog controls and the updated motion profile.
+
 ## Required physical setup
 
 - Flash `firmware/syringe_demo/syringe_demo.ino` to the Mega 2560 at 115200 baud.
   Close the Arduino serial monitor before starting ROS. PUL+ pin 28, DIR+ pin 27,
-  common signal ground as in the working lab wiring. ENA pin 25 is unused by
-  default (`USE_ENABLE=false`); verify driver polarity before enabling it.
+  common signal ground as in the working lab wiring. ENA+ connects to pin 25
+  and ENA- to signal GND. Enable control is now active
+  (`USE_ENABLE=true`, `ENABLE_ACTIVE=LOW`); verify this provisional polarity on
+  your actual driver. Idle disables after 300 ms and removes holding torque.
 - Firmware optional NC interlocks use pins 30 (stop), 32 (extrusion end), 34
   (retraction end), healthy closed to ground. They are DISABLED by default and
   are not safety-rated. Enable `USE_INTERLOCKS` only after installing/testing all

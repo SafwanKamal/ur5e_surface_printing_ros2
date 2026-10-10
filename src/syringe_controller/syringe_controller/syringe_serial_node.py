@@ -35,6 +35,7 @@ from syringe_interfaces.srv import (
 
 from .calibration import Calibration
 from .serial_backend import SerialBackend
+from .motion_profile import move_duration
 
 
 class SyringeSerialNode(Node):
@@ -91,7 +92,7 @@ class SyringeSerialNode(Node):
         if float(parameter("heartbeat_period_sec")) > 0.5:
             raise ValueError(
                 "heartbeat_period_sec must be <= 0.5 "
-                "for the 2-second watchdog"
+                "for the 1.5-second watchdog"
             )
 
         self.group = ReentrantCallbackGroup()
@@ -150,6 +151,9 @@ class SyringeSerialNode(Node):
                 raise RuntimeError(
                     "Startup STOP was not acknowledged"
                 )
+
+            if not self.backend.restore_watchdog():
+                raise RuntimeError("Could not restore the firmware host watchdog")
 
         except Exception:
             if hasattr(self, "backend"):
@@ -387,7 +391,7 @@ class SyringeSerialNode(Node):
                 rate * 60.0 / self.cal.pulses_per_ml
             )
 
-        if abs(steps) > 3000 or abs(steps) / rate > 100.0:
+        if abs(steps) > 3000 or move_duration(steps, rate) > 100.0:
             raise ValueError("Demo limit: <=3000 pulses and <=100 seconds per move")
         return steps, rate, effective
 
@@ -446,7 +450,7 @@ class SyringeSerialNode(Node):
             else:
                 deadline = (
                     time.monotonic()
-                    + abs(steps) / rate
+                    + move_duration(steps, rate)
                     + self.margin
                 )
 
