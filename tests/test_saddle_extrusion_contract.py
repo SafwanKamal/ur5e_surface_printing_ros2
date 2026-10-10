@@ -42,6 +42,15 @@ class SaddleExtrusionContractTests(unittest.TestCase):
         ):
             self.assertIn(f'"{parameter}"', SOURCE)
 
+    def test_approaches_use_collision_free_ik_joint_goals(self):
+        self.assertIn('GetPositionIK>("/compute_ik")', SOURCE)
+        self.assertIn("avoid_collisions = true", SOURCE)
+        self.assertIn("setJointValueTarget(joint_targets)", SOURCE)
+        self.assertNotIn(
+            "setPoseTarget(approach_target,tcp_link)",
+            SOURCE,
+        )
+
     def test_build_dependencies_are_declared(self):
         for dependency in (
             "rclcpp_action",

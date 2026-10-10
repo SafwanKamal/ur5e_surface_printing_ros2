@@ -9,6 +9,7 @@
 #include <moveit_msgs/action/execute_trajectory.hpp>
 #include <moveit_msgs/msg/display_trajectory.hpp>
 #include <moveit_msgs/msg/robot_trajectory.hpp>
+#include <moveit_msgs/srv/get_position_ik.hpp>
 
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
@@ -84,6 +85,125 @@ double durationToSeconds(
   return
     static_cast<double>(duration.sec) +
     static_cast<double>(duration.nanosec) * 1e-9;
+}
+
+std::map<std::string, double> resolveCollisionFreeIk(
+  const rclcpp::Node::SharedPtr& reporting_node,
+  const std::string& planning_group,
+  const std::string& planning_frame,
+  const std::string& tcp_link,
+  const geometry_msgs::msg::Pose& target_pose,
+  const moveit::core::RobotState& seed_state,
+  const std::vector<std::string>& active_joint_names,
+  double timeout_seconds,
+  int line_id)
+{
+  auto ik_node = rclcpp::Node::make_shared(
+    "saddle_approach_ik_" + std::to_string(line_id));
+
+  auto client = ik_node->create_client<
+    moveit_msgs::srv::GetPositionIK>("/compute_ik");
+
+  if (!client->wait_for_service(5s))
+  {
+    throw std::runtime_error(
+      "MoveIt /compute_ik service is unavailable");
+  }
+
+  auto request = std::make_shared<
+    moveit_msgs::srv::GetPositionIK::Request>();
+
+  request->ik_request.group_name = planning_group;
+  request->ik_request.avoid_collisions = true;
+  request->ik_request.ik_link_name = tcp_link;
+  request->ik_request.pose_stamped.header.frame_id =
+    planning_frame;
+  request->ik_request.pose_stamped.pose = target_pose;
+
+  request->ik_request.robot_state.is_diff = true;
+  request->ik_request.robot_state.joint_state.name =
+    active_joint_names;
+  seed_state.copyJointGroupPositions(
+    planning_group,
+    request->ik_request.robot_state.joint_state.position);
+
+  request->ik_request.timeout =
+    rclcpp::Duration::from_seconds(
+      timeout_seconds).to_builtin_msg();
+
+  auto future = client->async_send_request(request);
+
+  rclcpp::executors::SingleThreadedExecutor executor;
+  executor.add_node(ik_node);
+
+  const auto deadline =
+    std::chrono::steady_clock::now() +
+    std::chrono::duration_cast<
+      std::chrono::steady_clock::duration>(
+        std::chrono::duration<double>(timeout_seconds + 2.0));
+
+  while (
+    rclcpp::ok() &&
+    future.wait_for(0s) != std::future_status::ready &&
+    std::chrono::steady_clock::now() < deadline)
+  {
+    executor.spin_some(20ms);
+  }
+
+  executor.remove_node(ik_node);
+
+  if (future.wait_for(0s) != std::future_status::ready)
+  {
+    RCLCPP_WARN(
+      reporting_node->get_logger(),
+      "Collision-aware IK timed out for line %d",
+      line_id);
+    return {};
+  }
+
+  const auto response = future.get();
+  if (
+    !response ||
+    response->error_code.val !=
+      moveit_msgs::msg::MoveItErrorCodes::SUCCESS)
+  {
+    RCLCPP_WARN(
+      reporting_node->get_logger(),
+      "No collision-free IK solution for line %d (code %d)",
+      line_id,
+      response ? response->error_code.val : 0);
+    return {};
+  }
+
+  const auto& solution = response->solution.joint_state;
+  if (solution.name.size() != solution.position.size())
+  {
+    throw std::runtime_error(
+      "MoveIt returned malformed IK joint data");
+  }
+
+  std::map<std::string, double> solution_by_name;
+  for (std::size_t index = 0;
+       index < solution.name.size();
+       ++index)
+  {
+    solution_by_name[solution.name[index]] =
+      solution.position[index];
+  }
+
+  std::map<std::string, double> joint_targets;
+  for (const auto& joint_name : active_joint_names)
+  {
+    const auto entry = solution_by_name.find(joint_name);
+    if (entry == solution_by_name.end())
+    {
+      throw std::runtime_error(
+        "IK response omitted active joint: " + joint_name);
+    }
+    joint_targets[joint_name] = entry->second;
+  }
+
+  return joint_targets;
 }
 
 void requireControllerMode(
@@ -2037,6 +2157,9 @@ int main(int argc, char* argv[])
     std::shared_ptr<moveit::core::RobotState>
       planned_state;
 
+    const std::vector<std::string> active_joint_names =
+      move_group.getJointNames();
+
     std::size_t successful_lines = 0;
 
     for (const int line_id : lines_to_plan)
@@ -2093,17 +2216,63 @@ int main(int argc, char* argv[])
            retry <= approach_retries;
            ++retry)
       {
+        std::shared_ptr<moveit::core::RobotState>
+          approach_start_state;
+
         if (planned_state)
         {
-          move_group.setStartState(*planned_state);
+          approach_start_state =
+            std::make_shared<moveit::core::RobotState>(
+              *planned_state);
         }
         else
         {
-          move_group.setStartStateToCurrentState();
+          approach_start_state =
+            move_group.getCurrentState(10.0);
+
+          if (!approach_start_state)
+          {
+            throw std::runtime_error(
+              "Could not obtain the current robot state");
+          }
         }
-        move_group.setPoseTarget(approach_target,tcp_link);
+
+        move_group.setStartState(*approach_start_state);
+
+        const auto joint_targets =
+          resolveCollisionFreeIk(
+            node,
+            planning_group,
+            planning_frame,
+            tcp_link,
+            approach_target,
+            *approach_start_state,
+            active_joint_names,
+            std::min(5.0, planning_time),
+            line_id);
+
+        if (joint_targets.empty())
+        {
+          RCLCPP_WARN(
+            logger,
+            "Approach IK attempt %ld of %ld failed "
+            "for line %d",
+            static_cast<long>(retry),
+            static_cast<long>(approach_retries),
+            line_id);
+          continue;
+        }
+
+        if (!move_group.setJointValueTarget(joint_targets))
+        {
+          RCLCPP_WARN(
+            logger,
+            "MoveIt rejected the IK joint target for line %d",
+            line_id);
+          continue;
+        }
+
         const auto approach_result = move_group.plan(approach_plan);
-        move_group.clearPoseTargets();
         if (approach_result == moveit::core::MoveItErrorCode::SUCCESS)
         {
           approach_succeeded = true;
