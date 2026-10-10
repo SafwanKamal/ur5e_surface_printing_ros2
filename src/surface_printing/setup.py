@@ -24,6 +24,7 @@ setup(
     license="Apache-2.0",
     entry_points={
         "console_scripts": [
+            "make_tube_path = surface_printing.make_tube_path:main",
             "make_demo_path = surface_printing.make_demo_path:main",
             "convert_surface_csv = surface_printing.convert_surface_csv:main",
             "plan_surface_path = "

@@ -11,6 +11,24 @@
   <xacro:macro name="probe_tool" params="parent_link">
 
     <xacro:property name="pump" value="${xacro.load_yaml('$(find ur5e_toolheads)/config/printing_tool.yaml')}"/>
+    <!-- Total flange-to-tip nozzle, independent of the old CAD outlet offset. -->
+    <xacro:if value="${pump['enabled'] and pump.get('axial_nozzle_length_mm',0.0) > 0.0}">
+      <link name="axial_nozzle_envelope">
+        <visual>
+          <origin xyz="${pump['axial_nozzle_length_mm']/2000.0} 0 0" rpy="${pi/2} 0 ${pi/2}"/>
+          <geometry><cylinder radius="${pump['axial_nozzle_radius_mm']/1000.0}" length="${pump['axial_nozzle_length_mm']/1000.0}"/></geometry>
+          <material name="axial_nozzle_metal"><color rgba="0.72 0.75 0.78 1"/></material>
+        </visual>
+        <collision>
+          <!-- Last 0.5 mm is the intended deposition/contact zone. -->
+          <origin xyz="${(pump['axial_nozzle_length_mm']-0.5)/2000.0} 0 0" rpy="${pi/2} 0 ${pi/2}"/>
+          <geometry><cylinder radius="${pump['axial_nozzle_radius_mm']/1000.0}" length="${(pump['axial_nozzle_length_mm']-0.5)/1000.0}"/></geometry>
+        </collision>
+      </link>
+      <joint name="flange_to_axial_nozzle" type="fixed">
+        <parent link="${parent_link}"/><child link="axial_nozzle_envelope"/>
+      </joint>
+    </xacro:if>
     <xacro:if value="${pump['enabled']}">
       <link name="probe_tool_link">
         <visual>

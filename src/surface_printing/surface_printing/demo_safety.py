@@ -31,6 +31,38 @@ def calibrated_tool(xml):
     if config.get('enabled') is not True or config.get('calibrated') is not True:
         raise RuntimeError('Enable and calibrate printing_tool.yaml, rebuild, then restart robot/MoveIt')
     root=ET.fromstring(xml)
+    axial_length=float(config.get('axial_nozzle_length_mm',0.0))
+    axial_link=root.find("./link[@name='axial_nozzle_envelope']")
+    if axial_length > 0 or axial_link is not None:
+        from ur5e_toolheads.set_axial_nozzle_tcp import axial_tcp
+        radius=float(config.get('axial_nozzle_radius_mm',0.0))
+        if not math.isfinite(radius) or not 0 < radius <= 20 or axial_length <= 0.5:
+            raise RuntimeError('Invalid axial nozzle geometry')
+        xyz,rpy=axial_tcp(config,axial_length)
+        for name,expected in (('tcp_xyz',xyz),('tcp_rpy',rpy)):
+            if len(config[name])!=3 or any(abs(float(a)-b)>1e-7 for a,b in zip(config[name],expected)):
+                raise RuntimeError('Configured TCP is not axial to flange at the requested length')
+        collision=root.find("./link[@name='axial_nozzle_envelope']/collision")
+        if collision is None: raise RuntimeError('Missing live axial nozzle collision')
+        _check_values(collision.find('origin'),'xyz',[(axial_length-0.5)/2000.,0,0],1e-7)
+        _check_values(collision.find('origin'),'rpy',[math.pi/2,0,math.pi/2],1e-7)
+        _check_values(collision.find('geometry/cylinder'),'radius',[radius/1000.],1e-7)
+        _check_values(collision.find('geometry/cylinder'),'length',[(axial_length-0.5)/1000.],1e-7)
+        joint=root.find("./joint[@name='flange_to_axial_nozzle']")
+        mount_joint=root.find("./joint[@name='flange_to_probe_tool']")
+        if (joint is None or joint.get('type')!='fixed' or
+                joint.find('parent') is None or mount_joint is None or
+                joint.find('parent').get('link')!=mount_joint.find('parent').get('link') or
+                joint.find('child') is None or joint.find('child').get('link')!='axial_nozzle_envelope'):
+            raise RuntimeError('Axial nozzle is not fixed to the tool flange')
+        origin=joint.find('origin')
+        if origin is not None:
+            _check_values(origin,'xyz',[0,0,0],1e-7)
+            _check_values(origin,'rpy',[0,0,0],1e-7)
+        tool0_joint=root.find("./joint[@name='flange-tool0']")
+        if tool0_joint is None: raise RuntimeError('Cannot verify the UR flange/tool0 frame convention')
+        _check_values(tool0_joint.find('origin'),'xyz',[0,0,0],1e-7)
+        _check_values(tool0_joint.find('origin'),'rpy',[math.pi/2,0,math.pi/2],1e-7)
     expected_scale=[float(v) for v in config['mesh_scale']]
     if len(expected_scale)!=3 or any(not math.isfinite(v) or v<=0 for v in expected_scale):
         raise RuntimeError('Invalid configured pump mesh scale')
