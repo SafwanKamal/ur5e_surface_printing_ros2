@@ -576,7 +576,11 @@ tool orientation and collision scene. Mock results do not transfer a plan or
 calibration approval to the physical session.
 
 The console starts in **mock mode/domain 78**. Physical mode defaults to domain
-77. Physical stack launch requires a robot-specific kinematics file. Serial pump
+77. Mock hardware initializes in a bent-arm, downward-facing printing pose
+(`[0, -90, 90, -90, -90, 0]` degrees in UR joint order), rather than all-zero
+joints. Restart the mock stack after updating its initial-position configuration;
+locally changed tool mounting can change the nozzle direction. Physical stack
+launch requires a robot-specific kinematics file. Serial pump
 launch/motion and extrusion are disabled in mock mode. Review the RViz path before
 execution. A changed job, CSV, plan, session or completed run requires planning
 and checking again. Driver/model/start/scene checks remain in the existing

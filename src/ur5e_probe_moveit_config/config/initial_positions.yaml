@@ -1,9 +1,13 @@
-# Default initial positions for ur5e_with_probe_mock's ros2_control fake system
+# Downward-facing printing start for the ros2_control fake system only.
+# Current tool mount: joint degrees [0, -90, 90, -90, -90, 0].
+# With nominal UR5e kinematics and the committed 200 mm needle, probe_tcp is
+# approximately world [0.4899, 0.0366, 0.1899] m, with nozzle +Z along world -Z.
+# Restart mock robot_state_publisher/controller_manager to apply this pose.
 
 initial_positions:
-  elbow_joint: 0
-  shoulder_lift_joint: 0
-  shoulder_pan_joint: 0
-  wrist_1_joint: 0
-  wrist_2_joint: 0
-  wrist_3_joint: 0
+  elbow_joint: 1.5707963267948966
+  shoulder_lift_joint: -1.5707963267948966
+  shoulder_pan_joint: 0.0
+  wrist_1_joint: -1.5707963267948966
+  wrist_2_joint: -1.5707963267948966
+  wrist_3_joint: 0.0

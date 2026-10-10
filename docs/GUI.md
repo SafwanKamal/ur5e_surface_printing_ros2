@@ -126,8 +126,13 @@ gate. It never enables pump launch or extrusion.
    read-only `mock_monitor` executable subscribes to `/joint_states` and TF;
    it refuses domains other than 78. No joint or motion commands originate from
    the telemetry node.
-4. Use RViz to position the mock tip at the desired start. A tube requires the
-   nozzle downward within 15 degrees. Choose shape/size and tube dimensions,
+4. The mock stack now starts in a bent-arm, downward-facing printing pose:
+   joint degrees `[0, -90, 90, -90, -90, 0]` in UR joint order. With the committed
+   tool mounting/TCP and nominal UR5e kinematics, the tip is approximately world
+   `[0.4899, 0.0366, 0.1899]` m, with nozzle +Z along world -Z. Check the live
+   nozzle tilt and RViz after launch, especially with a locally changed tool
+   mounting. Use RViz to reposition the mock tip if necessary. A tube requires
+   the nozzle downward within 15 degrees. Choose shape/size and tube dimensions,
    then **1. Capture at current mock tip**. The captured tube tip is on the
    circumference; its center is diameter/2 toward world -X.
 5. Click **2. Plan + RViz preview** and review the complete arm/tool trajectory in
@@ -152,6 +157,12 @@ the robot stack/any owned executor visible in the main Session list. Use the
 stop controls and deliberately shut down the mock stack before launching the
 physical stack. Capture, plan and check again in the physical session; mock
 rehearsal does not establish physical calibration or unlock physical execution.
+
+The starting joints are in `ur5e_probe_moveit_config/config/initial_positions.yaml`;
+the alternate toolheads mock entry point uses the same values. Rebuild those
+packages and restart the mock robot stack to apply an update. This initializes
+the fake hardware at launch; it is not an automatic motion command or a physical
+robot startup position. Tip height is relative to world Z=0, not a measured table.
 
 ### Main workflow
 
