@@ -115,7 +115,7 @@ void command(char *s) {
     trip("BAD_COMMAND"); return;
   }
   long amount, rate;
-  bool isMove=!strcmp(cmd,"MOVE"), isStart=!strcmp(cmd,"START");
+  bool isMove=!strcmp(cmd,"MOVE") || !strcmp(cmd,"MOV"), isStart=!strcmp(cmd,"START");
   if((!isMove && !isStart) || extra || !number(a,amount) || !number(b,rate) ||
      amount==0 || amount==(-2147483647L-1L) || rate<1 || rate>(long)MAX_RATE ||
      (isStart && amount!=1 && amount!=-1) ||

@@ -74,6 +74,14 @@ int main(){
  reset();send("START 1 100");send("ESTOP");
  assert(!moving && !driverEnabled && Serial.output.find("ACK ESTOP")!=std::string::npos);
  reset();send("STATUS");assert(Serial.output.find("DRIVER DISABLED")!=std::string::npos);
+ // MOV is an alias; both finite and continuous commands ramp from 100 Hz.
+ for(const char* cmd : {"MOV -200 200", "MOVE -200 200", "START -1 200"}) {
+   reset();send("WATCHDOG OFF");send(cmd);
+   assert(moving && currentRate==100 && requestedRate==200);
+   for(int i=0;i<15;++i) {fake_us=nextPulse;loop();fake_us=fallAt;loop();}
+   assert(currentRate==200 && !faulted);
+   send("STOP");assert(!moving && !driverEnabled);
+ }
  std::cout<<"Firmware counts, ramps, stops, enable and watchdog checks passed "
           <<"(host shim, not AVR timing test)\n";
 }

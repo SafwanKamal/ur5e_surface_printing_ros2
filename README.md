@@ -662,7 +662,7 @@ same CSV. Physical printing requests both arm and pump motion:
 ```bash
 ros2 run surface_printing execute_surface_print --ros-args \
   -p simulation:=false -p execute:=true -p extrude:=true -p hardware_confirmed:=true \
-  -p flow_ml_per_min:=1.0 -p max_duration_sec:=60.0 -p max_volume_ml:=1.0
+  -p step_rate_hz:=0.0 -p flow_ml_per_min:=1.0 -p max_duration_sec:=60.0 -p max_volume_ml:=1.0
 ```
 
 The flow is a trial value requiring material verification. Hard Python demo
@@ -677,9 +677,11 @@ fixed-orientation world helix and alternate axial nozzle configuration.
 When material flow has not been calibrated, pass a positive whole-number
 `step_rate_hz` to select frequency control directly. This mode does not read
 `flow_ml_per_min` or `max_volume_ml`, does not use `pulses_per_ml` to command the
-pump, and makes no delivered-volume claim. Zero (the default) retains the
-existing flow-based interface. The GUI still exposes the flow-based interface;
-use the terminal commands below for frequency-controlled printing.
+pump, and makes no delivered-volume claim. The executor and GUI Plan & Print
+default to **200 Hz**, the current syringe/needle target. This is not a measured
+material-flow calibration. Explicit `step_rate_hz:=0.0` retains the legacy
+flow-based interface; the GUI's legacy flow/volume fields apply only at 0 Hz.
+Changing GUI frequency or pulse budget invalidates the checked job.
 
 For a fresh checked physical plan and verified extrusion direction:
 
@@ -688,7 +690,7 @@ For a fresh checked physical plan and verified extrusion direction:
 ROS_DOMAIN_ID=77 ros2 run surface_printing execute_surface_print --ros-args \
   -p trajectory_path:=/tmp/surface_line_plan.yaml \
   -p simulation:=false -p execute:=false -p extrude:=false \
-  -p step_rate_hz:=175.0 -p extrusion_direction:=-1 \
+  -p step_rate_hz:=200.0 -p extrusion_direction:=-1 \
   -p max_pulses:=3000 -p max_duration_sec:=100.0
 
 # After reviewing the entire RViz path: physical motion AND extrusion.
@@ -696,23 +698,39 @@ ROS_DOMAIN_ID=77 ros2 run surface_printing execute_surface_print --ros-args \
   -p trajectory_path:=/tmp/surface_line_plan.yaml \
   -p simulation:=false -p execute:=true -p extrude:=true \
   -p hardware_confirmed:=true \
-  -p step_rate_hz:=175.0 -p extrusion_direction:=-1 \
+  -p step_rate_hz:=200.0 -p extrusion_direction:=-1 \
   -p max_pulses:=3000 -p max_duration_sec:=100.0
 ```
 
 The target rate must be an integer in 1..5000 Hz; the syringe controller may have
 a lower configured maximum. Direction is explicitly `-1` or `+1` and must be
-verified on the actual hardware. The Arduino retains its acceleration ramp.
+verified on the actual hardware. Firmware starts at `min(100, target)` Hz and
+ramps at 1000 pulses/s². `MOVE steps hz` (also accepted as `MOV steps hz`)
+ramps up and down over the finite pulse count. ROS synchronized printing uses
+`START direction hz`: the same ramp-up, then sustained target frequency until
+STOP or a safety limit. At 200 Hz the nominal ramp-up spans 15 pulse increments,
+roughly 0.1 s; actual timing depends on the Arduino loop. Safety STOP remains
+immediate, not a ramp-down. No ramp constants were changed in this update.
+The MOV alias requires flashing this repository sketch. A Mega accepting MOV
+before this update may have a different sketch; its installed code cannot be
+verified from the repository alone.
 The executor starts extrusion only after measured robot progress and maintains
 the same keepalive lease, status monitoring, cancellation and STOP handling.
 It conservatively checks `ceil(rate * duration)` against the chosen pulse budget
 (1..3000), then checks again using actual robot speed scaling plus 3 seconds of
-stop reserve before motion. At 175 Hz and 3000 pulses, that requires estimated
-robot duration plus reserve to be at most approximately 17.14 seconds. A slower
+stop reserve before motion. At 200 Hz and 3000 pulses, that requires estimated
+robot duration plus reserve to be at most 15 seconds (robot duration <=12 s). A slower
 speed slider can therefore reject a nominal 10-second plan. Shorten the job if
 necessary; these limits match the firmware's existing pulse cap.
 Runtime pulse protection is a conservative rate-times-elapsed bound, not a
 measured pulse count or a material-flow sensor. Verify available plunger travel.
+
+Before sending a robot goal, execution rejects a STOP response reporting a
+latched syringe fault, even if STOP itself was acknowledged. Malformed
+PROGRESS/DONE count errors retain the offending serial line for diagnosis;
+they are not silently ignored. Restarting cleared the previously reported
+`Invalid firmware step count` latch, but its cause is not established without
+the raw line. Do not open a Serial Monitor while ROS owns the Arduino port.
 
 ### Offline CSV handoff and multi-line planning
 

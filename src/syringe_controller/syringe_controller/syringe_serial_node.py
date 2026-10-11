@@ -297,7 +297,8 @@ class SyringeSerialNode(Node):
             return (
                 False,
                 "Controller busy or faulted; stop current "
-                "motion or relaunch after fault",
+                "motion or relaunch after fault; "
+                + str(self.backend.snapshot()["fault"] or "reservation unavailable"),
             )
 
         success = self.backend.start(

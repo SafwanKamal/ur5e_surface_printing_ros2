@@ -156,7 +156,7 @@ class DemoSafety(unittest.TestCase):
             plan.write_text(yaml.safe_dump(dict(schema='surface_print_plan_v2',
                 created_unix_sec=time.time(),trajectory={},link_name='probe_tcp',
                 model_sha256='hash',cartesian_speed_mm_s=10)))
-            params=dict(trajectory_path=str(plan),step_rate_hz=175.,extrude=True,
+            params=dict(trajectory_path=str(plan),extrude=True,
                         execute=True,hardware_confirmed=True,max_duration_sec=100.)
             def parameter(key,default):
                 if key in ('flow_ml_per_min','max_volume_ml'):
@@ -173,10 +173,16 @@ class DemoSafety(unittest.TestCase):
             n.frequency.call_async.return_value=NS(success=True)
             run(n)
             req=n.frequency.call_async.call_args.args[0]
-            self.assertEqual(vars(req),dict(enabled=True,direction=-1,step_rate_hz=175.))
+            self.assertEqual(vars(req),dict(enabled=True,direction=-1,step_rate_hz=200.))
             n.flow.call_async.assert_not_called()
             self.assertEqual(n.stop.call_async.call_count,2)
             self.assertFalse(n.extruding)
+            n.robot.send_goal_async.reset_mock()
+            n.stop.call_async.return_value=NS(success=True,
+                message='STOP acknowledged; fault remains latched: Invalid firmware step count')
+            with self.assertRaisesRegex(RuntimeError, 'faulted before robot motion'):
+                run(n)
+            n.robot.send_goal_async.assert_not_called()
 
     def test_dead_syringe(self):
         n = self.node(); n.extruding = True; n.flow_started -= 2; n.health = 'IDLE'

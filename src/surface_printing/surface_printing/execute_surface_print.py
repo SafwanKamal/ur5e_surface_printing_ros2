@@ -153,7 +153,7 @@ def run(node):
     execute=bool(node.parameter('execute',False)); extrude=bool(node.parameter('extrude',False))
     node.simulation=bool(node.parameter('simulation',False))
     confirmed=bool(node.parameter('hardware_confirmed',False))
-    node.step_rate=float(node.parameter('step_rate_hz',0.0))
+    node.step_rate=float(node.parameter('step_rate_hz',200.0))
     node.frequency_mode=node.step_rate != 0.0
     node.max_pulses=node.parameter('max_pulses',3000)
     node.extrusion_direction=node.parameter('extrusion_direction',-1)
@@ -220,6 +220,8 @@ def run(node):
         if not node.stop.wait_for_service(timeout_sec=5): raise RuntimeError('Syringe STOP unavailable')
         stopped=node.wait(node.stop.call_async(Trigger.Request()),3)
         if not stopped.success: raise RuntimeError('Could not establish stopped pump')
+        if 'fault' in getattr(stopped, 'message', '').lower():
+            raise RuntimeError('Syringe is faulted before robot motion: '+stopped.message)
         if extrude:
             extrusion_client,_=extrusion_request(node,flow)
             if not extrusion_client.wait_for_service(timeout_sec=5):

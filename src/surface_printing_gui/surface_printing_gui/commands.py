@@ -97,18 +97,23 @@ def plan(csv, output, line, speed, velocity, acceleration, step):
                    eef_step=number(step, 'EEF step', 0.00001, 0.01))
 
 
-def execution(session, trajectory, execute, extrude, confirmed, flow, seconds, volume):
+def execution(session, trajectory, execute, extrude, confirmed, flow, seconds, volume,
+              step_rate_hz=0, max_pulses=3000):
     if extrude and session.simulation:
         raise ValueError('Mock mode forbids extrusion')
     if execute and not session.simulation and not confirmed:
         raise ValueError('Physical motion requires the hardware checklist acknowledgement')
+    rate = integer(step_rate_hz, 'Target pulse frequency', 0, 5000)
+    settings = (dict(step_rate_hz=float(rate), extrusion_direction=-1,
+                     max_pulses=integer(max_pulses, 'Pulse budget', 1, 3000)) if rate else
+                dict(step_rate_hz=0.0, flow_ml_per_min=number(flow, 'Flow', 0.001, 5),
+                     max_volume_ml=number(volume, 'Volume budget', 0.001, 5)))
     return ros_run('surface_printing', 'execute_surface_print',
                    trajectory_path=path(trajectory, 'Saved plan', True),
                    simulation=session.simulation, execute=execute, extrude=extrude,
                    hardware_confirmed=bool(confirmed and not session.simulation),
-                   flow_ml_per_min=number(flow, 'Flow', 0.001, 5),
                    max_duration_sec=number(seconds, 'Duration budget', 0.01, 100),
-                   max_volume_ml=number(volume, 'Volume budget', 0.001, 5))
+                   **settings)
 
 
 def convert(source, output, xyz, rpy):

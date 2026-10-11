@@ -41,6 +41,17 @@ class GUIWorkflow(unittest.TestCase):
         with self.assertRaises(ValueError):
             dispense(self.physical, 0.1, 1, False)
 
+    def test_frequency_route_ignores_uncalibrated_flow(self):
+        argv = execution(self.physical, self.plan, True, True, True,
+                         'unused', 60, 'unused', 200, 3000)
+        self.assertIn('step_rate_hz:=200.0', argv)
+        self.assertIn('max_pulses:=3000', argv)
+        self.assertFalse(any('flow_ml_per_min' in a for a in argv))
+        for rate in (-1, 200.5, 5001):
+            with self.assertRaises(ValueError):
+                execution(self.physical, self.plan, True, True, True,
+                          1, 60, 1, rate)
+
     def test_tube_has_explicit_mode_and_rejects_impossible_sizing(self):
         args = (self.mock, 'tube', 10, 'xy', -1, self.root/'tube.csv', 1, 0.5, 0.25)
         argv = capture(*args)

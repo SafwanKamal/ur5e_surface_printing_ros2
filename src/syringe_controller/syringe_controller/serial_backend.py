@@ -297,7 +297,7 @@ class SerialBackend:
                         raise ValueError()
 
                 except ValueError:
-                    self.fail("Invalid firmware step count")
+                    self.fail(f"Invalid firmware step count in {line!r}")
                     return
 
                 if kind == "PROGRESS":

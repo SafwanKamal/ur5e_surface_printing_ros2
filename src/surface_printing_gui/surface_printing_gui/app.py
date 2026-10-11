@@ -344,9 +344,11 @@ class PrintingApp:
         self.field(p,'trajectory','Saved plan YAML','/tmp/surface_line_plan.yaml',browse='save')
         self.buttons(p,[('1. Plan + publish RViz preview',self.plan_path),('2. Check saved plan (no motion)',self.check_plan)])
         self.section(p,'Rehearse or print the checked plan','Inspect the complete RViz trajectory before proceeding. Execution repeats model/start/scene/speed checks. A completed rehearsal consumes this plan; return to start and replan.')
-        self.field(p,'flow','Requested flow (mL/min)','1')
+        self.field(p,'step_rate_hz','Target pulse frequency (Hz; 0 selects legacy flow)','200')
+        self.field(p,'max_pulses','Pulse budget (<=3000)','3000')
+        self.field(p,'flow','Legacy flow (mL/min; used only at 0 Hz)','1')
         self.field(p,'duration','Duration budget (s, <=100)','60')
-        self.field(p,'volume','Volume budget (mL, <=5)','1')
+        self.field(p,'volume','Legacy volume budget (mL; used only at 0 Hz)','1')
         self.checkbox(p,'I reviewed the full RViz path, calibration, scene, controller and physical stop setup',self.confirmed)
         self.checkbox(p,'Enable physical extrusion during robot motion',self.extrude)
         self.execute_button=self.buttons(p,[('3. Execute checked plan',self.execute_plan)])[0]
@@ -354,7 +356,7 @@ class PrintingApp:
         self.confirmed.trace_add('write',self.update_execute_button)
         self.extrude.trace_add('write',self.update_execute_button)
         self.job_fields=('mode','domain','workspace','world_csv','trajectory','line','speed','velocity',
-                         'acceleration','eef_step','flow','duration','volume')
+                         'acceleration','eef_step','flow','duration','volume','step_rate_hz','max_pulses')
 
     def job_key(self):
         values=tuple(self.get(k) for k in self.job_fields)
@@ -394,7 +396,8 @@ class PrintingApp:
     def execution_args(self,execute):
         return execution(self.session(),self.get('trajectory'),execute,
                          self.extrude.get() if execute else False,self.confirmed.get(),
-                         self.get('flow'),self.get('duration'),self.get('volume'))
+                         self.get('flow'),self.get('duration'),self.get('volume'),
+                         self.get('step_rate_hz'),self.get('max_pulses'))
 
     def execute_plan(self):
         if not self.gate.ready(self.signature()):

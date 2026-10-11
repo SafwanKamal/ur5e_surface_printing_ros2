@@ -52,6 +52,17 @@ class SerialSafety(unittest.TestCase):
     def test_firmware_reset_latches(self):
         self.backend._line('READY SYRINGE_DEMO_V1')
         self.assertFalse(self.backend.reserve('action'))
+    def test_malformed_count_preserves_evidence_and_latches(self):
+        self.backend._line('PROGRESS invalid')
+        self.assertIn('PROGRESS invalid', self.backend.snapshot()['fault'])
+        self.assertTrue(self.backend.stop())
+        self.assertFalse(self.backend.reserve('action'))
+    def test_valid_count_feedback(self):
+        self.backend._line('PROGRESS 200')
+        self.assertEqual(self.backend.snapshot()['progress'], 200)
+        self.backend._line('DONE 300')
+        self.assertTrue(self.backend.snapshot()['done'])
+        self.assertFalse(self.backend.snapshot()['fault'])
     def test_feedback_loss_stops(self):
         self.backend.reserve('action'); self.backend.start('START -1 9','action')
         self.port.reply=False; self.backend.last_rx=time.monotonic()-2
