@@ -1021,6 +1021,30 @@ Purpose:
 | `surface_printing` | `execute_surface_print` | Check-only by default; explicit mode can move robot/pump |
 | `syringe_controller` | `syringe_serial_node` | Serial pump services/actions; run via `syringe.launch.py` |
 | `ur5e_toolheads` | `set_needle_tcp`, `set_axial_nozzle_tcp` | Preview by default; `--write` edits source YAML and resets calibration |
+
+To restore the CAD syringe's sideways TCP offset with a **108 mm axial
+flange-to-tip distance**, use the source configuration (not an installed copy):
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source "$HOME/ur5e_ws/install/setup.bash"
+ros2 run ur5e_toolheads set_needle_tcp \
+  --config "$HOME/ur5e_ws/src/ur5e_toolheads/config/printing_tool.yaml" \
+  --flange-distance-mm 108
+```
+
+The command previews the transform. Add `--write` to apply after backing up the
+YAML. It restores lateral displacement from the configured CAD outlet and mesh
+transform, keeps the mount transform, and solves the needle extension for the
+requested axial distance. It rejects a nozzle axis that is not parallel to the
+flange tool axis or a negative/out-of-range extension. With the repository's
+mount and CAD settings, the local TCP is `[96.74983, 2.00020, 108]` mm and the
+outlet-to-tip extension is `9.98464` mm. This is **not** a 108 mm needle extension.
+Any earlier centered axial nozzle envelope is removed when writing.
+Rebuild `ur5e_toolheads`, restart the robot/MoveIt stack and GUI, verify the tip
+alignment/collision geometry in RViz, and generate a new path and plan.
+Writing sets `calibrated: false`; mark it true only after verifying the tool.
+The helper does not command robot motion.
 | `ur5e_moveit_cpp` | `add_mesh_collision_object`, `check_surface_toolpath_ik`, `plan_surface_toolpath`, `plan_execute_surface_toolpath` | Mesh scene change, IK/plan-only, or explicitly enabled segment execution |
 
 [PARAMETERS.md](docs/PARAMETERS.md) lists declared defaults. [COMMANDS.md](docs/COMMANDS.md)

@@ -35,22 +35,52 @@ def calculate_tcp(config, length_mm):
     return xyz, [roll, pitch, yaw]
 
 
+def needle_for_flange_distance(config, distance_mm):
+    """Restore the CAD lateral offset and set axial distance from the flange."""
+    if not math.isfinite(distance_mm) or not 0 < distance_mm <= 300:
+        raise ValueError('Flange axial distance must be in (0,300] mm')
+    base, _ = calculate_tcp(config, 0)
+    tip, _ = calculate_tcp(config, 1)
+    # UR flange +X is the physical tool axis. Transform the CAD outlet/axis
+    # through the existing mount; do not erase its lateral displacement.
+    mount = dict(mesh_scale=[1., 1., 1.], mesh_xyz=config['mount_xyz'],
+                 mesh_rpy=config['mount_rpy'], syringe_outlet_cad_mm=base)
+    flange_base, _ = calculate_tcp(mount, 0)
+    mount['mesh_xyz'] = [0., 0., 0.]
+    mount['syringe_outlet_cad_mm'] = [(tip[i]-base[i])*1000 for i in range(3)]
+    axis, _ = calculate_tcp(mount, 0)
+    if abs(abs(axis[0])-1) > 1e-6 or math.hypot(axis[1], axis[2]) > 1e-6:
+        raise ValueError('CAD nozzle axis is not parallel to the flange tool axis; '
+                         'cannot preserve sideways offset by changing needle length')
+    length = (distance_mm/1000 - flange_base[0])/axis[0]*1000
+    calculate_tcp(config, length)  # Validate representable physical extension.
+    return length
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', type=Path, required=True,
                         help='Source printing_tool.yaml (not an installed copy)')
-    parser.add_argument('--needle-length-mm', type=float, required=True,
+    length_args = parser.add_mutually_exclusive_group(required=True)
+    length_args.add_argument('--needle-length-mm', type=float,
                         help='Outlet-to-tip extension, not total needle/hub length')
+    length_args.add_argument('--flange-distance-mm', type=float,
+                             help='Axial flange-to-tip distance; restore CAD sideways offset')
     parser.add_argument('--write', action='store_true', help='Apply; otherwise preview only')
     args = parser.parse_args()
     config = yaml.safe_load(args.config.read_text())
-    xyz, rpy = calculate_tcp(config, args.needle_length_mm)
+    length = (needle_for_flange_distance(config, args.flange_distance_mm)
+              if args.flange_distance_mm is not None else args.needle_length_mm)
+    xyz, rpy = calculate_tcp(config, length)
     print(f'tcp_xyz (m): {xyz}\ntcp_rpy (rad): {rpy}')
     if not args.write:
         print('Preview only. Add --write to update source configuration.')
         return
-    config.update(tcp_xyz=xyz, tcp_rpy=rpy, needle_length_mm=args.needle_length_mm,
+    config.update(tcp_xyz=xyz, tcp_rpy=rpy, needle_length_mm=length,
                   calibrated=False)
+    # An earlier centered axial-nozzle envelope no longer represents this tool.
+    config.pop('axial_nozzle_length_mm', None)
+    config.pop('axial_nozzle_radius_mm', None)
     # Atomic replacement avoids leaving a partial YAML on interruption.
     target = args.config.resolve()
     fd, name = tempfile.mkstemp(prefix=target.name+'.', dir=target.parent)
