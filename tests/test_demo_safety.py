@@ -8,13 +8,15 @@ import math
 import sys
 import time
 import unittest
+import tempfile
+import yaml
 from pathlib import Path
 from types import SimpleNamespace as NS
 from unittest.mock import Mock
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / 'src/surface_printing/surface_printing'
 sys.path.insert(0, str(SRC.parent))
-from surface_printing.demo_geometry import demo_offsets, validate_budget
+from surface_printing.demo_geometry import demo_offsets, validate_budget, validate_pulse_budget
 from surface_printing.convert_surface_csv import multiply
 
 
@@ -48,6 +50,7 @@ class DemoSafety(unittest.TestCase):
         n.motion_reference = [0.]; n.motion_seen = False; n.last_motion = now
         n.flow_started = now; n.last_health = now; n.health = 'MOVING'
         n.max_volume = 1.; n.effective_flow = 1.; n.last_ping = 0.
+        n.frequency_mode = False; n.step_rate = 175.; n.max_pulses = 3000
         n.keepalive = Mock()
         return n
 
@@ -90,6 +93,90 @@ class DemoSafety(unittest.TestCase):
     def test_volume_limit(self):
         n = self.node(); n.extruding = True; n.flow_started -= 10; n.max_volume = .01
         with self.assertRaisesRegex(RuntimeError, 'volume budget'): n.tick()
+
+    def test_frequency_ignores_uncalibrated_volume(self):
+        n=self.node(); n.extruding=True; n.frequency_mode=True
+        n.max_volume=.000001; n.effective_flow=float('nan')
+        n.tick()
+        n.keepalive.publish.assert_called_once()
+
+    def test_pulse_limit_stops(self):
+        n=self.node(); n.extruding=True; n.frequency_mode=True
+        n.flow_started-=1; n.max_pulses=100
+        with self.assertRaisesRegex(RuntimeError,'pulse budget'): n.tick()
+
+    def test_frequency_preserves_status_checks(self):
+        n=self.node(); n.extruding=True; n.frequency_mode=True
+        n.flow_started-=2; n.health='IDLE'
+        with self.assertRaisesRegex(RuntimeError,'not moving'): n.tick()
+
+    def test_pulse_budget_includes_scaling_and_stop_reserve(self):
+        validate_pulse_budget(10+3,175,100,3000)
+        with self.assertRaisesRegex(ValueError,'pulse budget'):
+            validate_pulse_budget(10/.5+3,175,100,3000)
+
+    def test_invalid_frequency_budgets(self):
+        for rate in [-1,0,175.5,5001,float('nan'),float('inf')]:
+            with self.assertRaises(ValueError):validate_pulse_budget(1,rate,100,3000)
+        for pulses in [0,3001,1.5,float('nan')]:
+            with self.assertRaises(ValueError):validate_pulse_budget(1,175,100,pulses)
+
+    def test_frequency_service_is_direct(self):
+        request=extract('execute_surface_print.py',['extrusion_request'],
+                        {'SetExtrusion':NS(Request=NS),'SetFlow':NS(Request=NS)})['extrusion_request']
+        n=NS(frequency_mode=True,step_rate=175.,extrusion_direction=-1,frequency=object())
+        client,req=request(n,None)
+        self.assertIs(client,n.frequency)
+        self.assertEqual(vars(req),dict(enabled=True,direction=-1,step_rate_hz=175.))
+        n.frequency_mode=False;n.flow=object()
+        client,req=request(n,1.)
+        self.assertIs(client,n.flow)
+        self.assertEqual(vars(req),dict(enabled=True,flow_ml_per_min=1.,retract=False))
+
+    def test_executor_frequency_without_flow_calibration(self):
+        # Exercise production run() through physical check and extrusion with
+        # fake ROS services/actions. No hardware/ROS transport is tested here.
+        namespace={'math':math,'time':time,'Path':Path,'yaml':yaml,
+                   'RobotTrajectory':lambda:NS(joint_trajectory=NS(joint_names=['a'])),
+                   'set_message_fields':lambda *a:None,
+                   'validate_trajectory':lambda t:10.,'load_bounds':lambda **k:None,
+                   'check_state':lambda *a:None,'check_trajectory':lambda *a:None,
+                   'live_model':lambda n:('xml','hash'),'verify_tcp_speed':lambda *a:None,
+                   'require_real_model':lambda x:None,'calibrated_tool':lambda x:None,
+                   'require_controller_mode':lambda *a,**k:None,'check_scene':lambda *a:None,
+                   'start_matches':lambda *a:None,'validate_budget':validate_budget,
+                   'validate_pulse_budget':validate_pulse_budget,
+                   'speed_scaling_fraction':speed_scaling_fraction,
+                   'SetExtrusion':NS(Request=NS),'SetFlow':NS(Request=NS),
+                   'Trigger':NS(Request=NS),'ExecuteTrajectory':NS(Goal=NS),
+                   'GoalStatus':NS(STATUS_SUCCEEDED=4)}
+        run=extract('execute_surface_print.py',['run','extrusion_request'],namespace)['run']
+        with tempfile.TemporaryDirectory() as folder:
+            plan=Path(folder)/'plan.yaml'
+            plan.write_text(yaml.safe_dump(dict(schema='surface_print_plan_v2',
+                created_unix_sec=time.time(),trajectory={},link_name='probe_tcp',
+                model_sha256='hash',cartesian_speed_mm_s=10)))
+            params=dict(trajectory_path=str(plan),step_rate_hz=175.,extrude=True,
+                        execute=True,hardware_confirmed=True,max_duration_sec=100.)
+            def parameter(key,default):
+                if key in ('flow_ml_per_min','max_volume_ml'):
+                    self.fail('Frequency mode must not read flow/volume settings')
+                return params.get(key,default)
+            result=NS(status=4,result=NS(error_code=NS(val=1)))
+            goal=NS(accepted=True,get_result_async=lambda:result,add_done_callback=lambda f:None)
+            n=NS(parameter=parameter,fresh_joints=lambda:None,scale=1.,
+                 scale_received=time.monotonic(),motion_seen=True,late_goal=lambda f:None,
+                 frequency=Mock(),flow=Mock(),stop=Mock(),robot=Mock(),tick=Mock(),
+                 wait=lambda response,timeout:response,effective_flow=0.,get_logger=lambda:Mock())
+            n.robot.send_goal_async.return_value=goal
+            n.stop.call_async.return_value=NS(success=True)
+            n.frequency.call_async.return_value=NS(success=True)
+            run(n)
+            req=n.frequency.call_async.call_args.args[0]
+            self.assertEqual(vars(req),dict(enabled=True,direction=-1,step_rate_hz=175.))
+            n.flow.call_async.assert_not_called()
+            self.assertEqual(n.stop.call_async.call_count,2)
+            self.assertFalse(n.extruding)
 
     def test_dead_syringe(self):
         n = self.node(); n.extruding = True; n.flow_started -= 2; n.health = 'IDLE'

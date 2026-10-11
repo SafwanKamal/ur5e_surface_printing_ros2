@@ -1,4 +1,4 @@
-"""Bounded demonstration with motion monitoring and leased constant flow."""
+"""Bounded demonstration with leased frequency or calibrated-flow extrusion."""
 import math
 import signal
 import time
@@ -14,10 +14,10 @@ from rclpy.signals import SignalHandlerOptions
 from rosidl_runtime_py.set_message import set_message_fields
 from std_msgs.msg import Empty, Float64
 from std_srvs.srv import Trigger
-from syringe_interfaces.srv import SetFlow
+from syringe_interfaces.srv import SetFlow, SetExtrusion
 from std_msgs.msg import String
 from .common import WorkNode, validate_trajectory, speed_scaling_fraction
-from .demo_geometry import validate_budget
+from .demo_geometry import validate_budget, validate_pulse_budget
 from .tcp_speed import verify as verify_tcp_speed
 from .wrist_guard import load_bounds, check_state, check_trajectory
 from .demo_safety import (live_model, calibrated_tool, check_scene,
@@ -36,11 +36,14 @@ class PrintNode(WorkNode):
         self.simulation=False; self.robot_goal=None; self.goal_future=None
         self.abort_pending_goal=False; self.deadline=math.inf; self.max_volume=1.
         self.effective_flow=0.; self.result_future=None
+        self.frequency_mode=False; self.step_rate=0.; self.max_pulses=3000
+        self.extrusion_direction=-1
         self.keepalive=self.create_publisher(Empty,'/syringe/flow_keepalive',10)
         self.status_sub=self.create_subscription(String,'/syringe/status',self.status,10)
         self.scale_sub=self.create_subscription(Float64,
             '/speed_scaling_state_broadcaster/speed_scaling',self.scaling,qos_profile_sensor_data)
         self.flow=self.create_client(SetFlow,'/syringe/set_flow')
+        self.frequency=self.create_client(SetExtrusion,'/syringe/set_extrusion')
         self.stop=self.create_client(Trigger,'/syringe/stop')
         self.abort_srv=self.create_service(Trigger,'/surface_printing/stop',self.abort)
         self.robot=ActionClient(self,ExecuteTrajectory,'/execute_trajectory')
@@ -86,7 +89,9 @@ class PrintNode(WorkNode):
                 raise RuntimeError('Syringe is not moving: '+self.health)
             if now-max(self.last_health,self.flow_started)>1.0:
                 raise RuntimeError('Syringe status stale')
-            if (now-self.flow_started)*self.effective_flow/60 >= self.max_volume:
+            if self.frequency_mode and (now-self.flow_started)*self.step_rate >= self.max_pulses:
+                raise RuntimeError('Extrusion pulse budget reached')
+            if not self.frequency_mode and (now-self.flow_started)*self.effective_flow/60 >= self.max_volume:
                 raise RuntimeError('Extrusion volume budget reached')
             if now-self.last_ping>=.2:
                 self.keepalive.publish(Empty()); self.last_ping=now
@@ -134,15 +139,35 @@ def start_matches(node, trajectory, tolerance):
             raise RuntimeError(f'Robot is not at saved start ({name}); replan from current pose')
 
 
+def extrusion_request(node, flow):
+    if node.frequency_mode:
+        req=SetExtrusion.Request()
+        req.enabled=True; req.direction=node.extrusion_direction; req.step_rate_hz=node.step_rate
+        return node.frequency, req
+    req=SetFlow.Request(); req.enabled=True; req.flow_ml_per_min=flow; req.retract=False
+    return node.flow, req
+
+
 def run(node):
     path=node.parameter('trajectory_path','/tmp/surface_line_plan.yaml')
     execute=bool(node.parameter('execute',False)); extrude=bool(node.parameter('extrude',False))
     node.simulation=bool(node.parameter('simulation',False))
     confirmed=bool(node.parameter('hardware_confirmed',False))
-    flow=float(node.parameter('flow_ml_per_min',1.0))
+    node.step_rate=float(node.parameter('step_rate_hz',0.0))
+    node.frequency_mode=node.step_rate != 0.0
+    node.max_pulses=node.parameter('max_pulses',3000)
+    node.extrusion_direction=node.parameter('extrusion_direction',-1)
+    if node.extrusion_direction not in (-1,1):
+        raise ValueError('extrusion_direction must be -1 or +1')
+    flow=None if node.frequency_mode else float(node.parameter('flow_ml_per_min',1.0))
     tolerance=float(node.parameter('start_tolerance_rad',0.01))
     max_seconds=float(node.parameter('max_duration_sec',60.0))
-    node.max_volume=float(node.parameter('max_volume_ml',1.0))
+    node.max_volume=math.inf if node.frequency_mode else float(node.parameter('max_volume_ml',1.0))
+    def budget(seconds, effective_flow=flow):
+        if node.frequency_mode:
+            validate_pulse_budget(seconds,node.step_rate,max_seconds,node.max_pulses)
+        else:
+            validate_budget(seconds,effective_flow,max_seconds,node.max_volume)
     if not math.isfinite(tolerance) or not 0<tolerance<=.03:
         raise ValueError('start_tolerance_rad must be (0,0.03]')
     if node.simulation and extrude: raise ValueError('Simulation forbids extrusion')
@@ -169,10 +194,12 @@ def run(node):
         require_real_model(xml)
         calibrated_tool(xml)
     require_controller_mode(node,simulation=node.simulation)
-    validate_budget(duration,flow,max_seconds,node.max_volume)
+    budget(duration)
     check_scene(node,trajectory,data.get('group_name','ur_manipulator'))
     start_matches(node,trajectory,tolerance)
-    node.get_logger().info(f'Validated {duration:.2f}s plan, flow={flow:g} mL/min; '
+    setting=(f'frequency={node.step_rate:g} Hz, pulse budget={node.max_pulses}; volume uncalibrated'
+             if node.frequency_mode else f'flow={flow:g} mL/min')
+    node.get_logger().info(f'Validated {duration:.2f}s plan, {setting}; '
                            f'execute={execute}, extrude={extrude}')
     if not execute:
         node.get_logger().info('CHECK ONLY: no robot or pump motion requested'); return
@@ -186,15 +213,17 @@ def run(node):
             rclpy.spin_once(node,timeout_sec=.02)
         node.baseline_scale=speed_scaling_fraction(node.scale)
     actual_estimate=duration/(1. if node.simulation else node.baseline_scale)
-    # Reserve stop latency in the volume budget (lease + firmware timeout).
-    validate_budget(actual_estimate+3.,flow,max_seconds,node.max_volume)
+    # Reserve stop latency in the pulse/volume budget (lease + firmware timeout).
+    budget(actual_estimate+3.)
     if not node.simulation:
         # Even motion-only execution establishes that the pump is stopped.
         if not node.stop.wait_for_service(timeout_sec=5): raise RuntimeError('Syringe STOP unavailable')
         stopped=node.wait(node.stop.call_async(Trigger.Request()),3)
         if not stopped.success: raise RuntimeError('Could not establish stopped pump')
-        if extrude and not node.flow.wait_for_service(timeout_sec=5):
-            raise RuntimeError('Syringe flow service unavailable')
+        if extrude:
+            extrusion_client,_=extrusion_request(node,flow)
+            if not extrusion_client.wait_for_service(timeout_sec=5):
+                raise RuntimeError('Syringe extrusion service unavailable')
     start_matches(node,trajectory,tolerance)
     node.joint_names=list(trajectory.joint_trajectory.joint_names)
     node.started=node.last_motion=time.monotonic()
@@ -210,17 +239,22 @@ def run(node):
         while not node.motion_seen:
             rclpy.spin_once(node,timeout_sec=.02); node.tick()
             if node.result_future.done(): raise RuntimeError('Robot ended before extrusion could start')
-        req=SetFlow.Request(); req.enabled=True; req.flow_ml_per_min=flow; req.retract=False
-        # Include service latency in the estimated extrusion volume.
+        extrusion_client,req=extrusion_request(node,flow)
+        # Include service latency in the conservative extrusion budget.
         flow_requested=time.monotonic()
-        response=node.wait(node.flow.call_async(req),3)
+        response=node.wait(extrusion_client.call_async(req),3)
         if not response.success: raise RuntimeError(response.message)
-        node.effective_flow=response.effective_flow_ml_per_min
+        if not node.frequency_mode:
+            node.effective_flow=response.effective_flow_ml_per_min
         node.extruding=True; node.flow_started=flow_requested; node.last_ping=0
-        validate_budget(actual_estimate+3.,node.effective_flow,max_seconds,node.max_volume)
+        budget(actual_estimate+3.,node.effective_flow)
         node.tick()
-        node.get_logger().info(f'Extruding at {node.effective_flow:.4f} mL/min '
-                               '(pulse estimate; no material-flow sensor)')
+        if node.frequency_mode:
+            node.get_logger().info(f'Extruding at target {node.step_rate:g} Hz, direction '
+                                   f'{node.extrusion_direction}; firmware ramps; volume uncalibrated')
+        else:
+            node.get_logger().info(f'Extruding at {node.effective_flow:.4f} mL/min '
+                                   '(pulse estimate; no material-flow sensor)')
     response=node.wait(node.result_future,max_seconds)
     node.extruding=False; node.monitoring=False
     if not node.simulation:
