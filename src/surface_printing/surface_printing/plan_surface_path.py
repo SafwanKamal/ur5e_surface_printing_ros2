@@ -4,6 +4,7 @@ import csv
 import json
 import math
 import time
+import copy
 
 from pathlib import Path
 
@@ -31,6 +32,7 @@ from rosidl_runtime_py.convert import message_to_ordereddict
 
 from .common import WorkNode, validate_trajectory
 from .tcp_speed import retime
+from .cartesian_timing import strictly_timed, split_legs, join_legs, remove_identical_time_duplicates
 from .demo_safety import live_model
 from .wrist_guard import load_bounds, check_state, check_trajectory
 
@@ -286,6 +288,37 @@ def run(node):
             f"code={response.error_code.val}; no plan saved"
         )
 
+    duplicates = remove_identical_time_duplicates(response.solution)
+    if duplicates:
+        node.get_logger().info(f'Removed {duplicates} identical trajectory states at duplicate times')
+    if not strictly_timed(response.solution):
+        legs = split_legs(poses)
+        if len(legs) < 2:
+            raise RuntimeError('MoveIt returned non-increasing times on a single Cartesian leg; no plan saved')
+        node.get_logger().warning(
+            f'MoveIt returned non-increasing times; replanning {len(legs)} stationary-ended Cartesian legs')
+        leg_state = copy.deepcopy(state)
+        timed_legs = []
+        for index, waypoints in enumerate(legs):
+            leg_request = copy.deepcopy(request)
+            leg_request.start_state = leg_state
+            leg_request.waypoints = waypoints
+            leg = node.wait(planner.call_async(leg_request), 60.0)
+            if leg.error_code.val != 1 or leg.fraction < .999999:
+                raise RuntimeError(f'Cartesian leg {index+1} incomplete: fraction={leg.fraction}; no plan saved')
+            remove_identical_time_duplicates(leg.solution)
+            if not strictly_timed(leg.solution):
+                raise RuntimeError(f'Cartesian leg {index+1} has non-increasing time; no plan saved')
+            check_trajectory(leg.solution, wrist_bounds)
+            timed_legs.append(leg.solution)
+            positions = dict(zip(leg.solution.joint_trajectory.joint_names,
+                                 leg.solution.joint_trajectory.points[-1].positions))
+            leg_state = copy.deepcopy(leg_state)
+            leg_state.joint_state.position = [positions.get(name, position) for name, position in
+                zip(leg_state.joint_state.name, leg_state.joint_state.position)]
+            leg_state.joint_state.velocity = [0.] * len(leg_state.joint_state.name)
+        response.solution = join_legs(timed_legs)
+        node.get_logger().info('Cartesian legs joined at rest; extrusion can remain continuous')
     check_trajectory(response.solution, wrist_bounds)
     speed_check = retime(response.solution, xml, link, speed_mm_s, wrist_bounds)
     node.get_logger().info(

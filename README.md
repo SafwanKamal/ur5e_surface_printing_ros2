@@ -645,6 +645,18 @@ circle size is diameter. All passes are one CSV line and one robot trajectory.
 Extrusion, if enabled, continues through the turnarounds; the firmware ramps
 up once for the whole trajectory, not once per pass. This measures repeated
 traversal/deposition, rather than three separate approach-and-return cycles.
+If MoveIt returns duplicate/non-increasing timestamps for a repeated path,
+the planner removes only exactly identical states at equal timestamps. If
+timing is still invalid, it replans each sharp-turn leg with the same collision,
+joint and jump constraints, seeds it from the preceding leg's endpoint, and
+joins stationary endpoints into one continuous-time trajectory. Shared
+endpoints occur once; turnarounds have zero velocity/acceleration. The joined
+trajectory receives the usual sampled spline TCP-speed check and slowdown.
+Actual motion at each turnaround stops and reverses while extrusion remains
+on, so pooling at those points is part of the deposition test. Invalid
+single-leg timing, partial paths, moving/mismatched endpoints or invalid joined
+timing still prevent saving a plan. No timestamps for real motion are patched
+with arbitrary small increments.
 
 Suggested initial series, all in world XY at fixed nozzle orientation:
 
