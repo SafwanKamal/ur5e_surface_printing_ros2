@@ -32,7 +32,8 @@ from rosidl_runtime_py.convert import message_to_ordereddict
 
 from .common import WorkNode, validate_trajectory
 from .tcp_speed import retime
-from .cartesian_timing import strictly_timed, split_legs, join_legs, remove_identical_time_duplicates
+from .cartesian_timing import (strictly_timed, split_legs, join_legs,
+                               remove_identical_time_duplicates, configured_limits, stop_ended_timing, joint_peaks)
 from .demo_safety import live_model
 from .wrist_guard import load_bounds, check_state, check_trajectory
 
@@ -310,6 +311,9 @@ def run(node):
             if not strictly_timed(leg.solution):
                 raise RuntimeError(f'Cartesian leg {index+1} has non-increasing time; no plan saved')
             check_trajectory(leg.solution, wrist_bounds)
+            limits = configured_limits(xml, leg.solution.joint_trajectory.joint_names, scale, acceleration)
+            leg_factor = stop_ended_timing(leg.solution, limits)
+            node.get_logger().info(f'Leg {index+1}: explicit rest endpoints; joint-limit time scale {leg_factor:.3f}')
             timed_legs.append(leg.solution)
             positions = dict(zip(leg.solution.joint_trajectory.joint_names,
                                  leg.solution.joint_trajectory.points[-1].positions))
@@ -318,6 +322,10 @@ def run(node):
                 zip(leg_state.joint_state.name, leg_state.joint_state.position)]
             leg_state.joint_state.velocity = [0.] * len(leg_state.joint_state.name)
         response.solution = join_legs(timed_legs)
+        for name,(v,a) in joint_peaks(response.solution).items():
+            vmax,amax = limits[name]
+            if v>vmax*(1+1e-6) or a>amax*(1+1e-6):
+                raise RuntimeError(f'Joined leg exceeds scaled joint limits: {name}; no plan saved')
         node.get_logger().info('Cartesian legs joined at rest; extrusion can remain continuous')
     check_trajectory(response.solution, wrist_bounds)
     speed_check = retime(response.solution, xml, link, speed_mm_s, wrist_bounds)

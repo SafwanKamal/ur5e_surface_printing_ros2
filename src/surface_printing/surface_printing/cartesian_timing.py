@@ -1,6 +1,95 @@
 """Join independently timed Cartesian legs at stationary sharp turns."""
 import copy
 import math
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+
+def configured_limits(xml, names, velocity_scale, acceleration_scale):
+    """Scaled limits from live URDF and this workspace's MoveIt configuration."""
+    import yaml
+    from ament_index_python.packages import get_package_share_directory
+    config = yaml.safe_load((Path(get_package_share_directory('ur5e_probe_moveit_config')) /
+                            'config/joint_limits.yaml').read_text())['joint_limits']
+    root = ET.fromstring(xml)
+    limits = {}
+    for name in names:
+        joint = root.find(f"joint[@name='{name}']/limit")
+        entry = config[name]
+        if joint is None or not entry.get('has_acceleration_limits'):
+            raise ValueError(f'Missing velocity/acceleration limit for {name}')
+        velocity = float(joint.get('velocity'))
+        if entry.get('has_velocity_limits'):
+            velocity = min(velocity, float(entry['max_velocity']))
+        limits[name] = (velocity*velocity_scale,
+                        float(entry['max_acceleration'])*acceleration_scale)
+    return limits
+
+
+def joint_peaks(trajectory):
+    """Exact velocity/acceleration extrema for each cubic Hermite segment."""
+    names = trajectory.joint_trajectory.joint_names
+    peaks = {name: [0., 0.] for name in names}
+    for a,b in zip(trajectory.joint_trajectory.points, trajectory.joint_trajectory.points[1:]):
+        dt = (nanoseconds(b)-nanoseconds(a))/1e9
+        if dt <= 0:
+            raise ValueError('Non-increasing leg time')
+        for j,name in enumerate(names):
+            delta = b.positions[j]-a.positions[j]
+            v0,v1 = a.velocities[j]*dt,b.velocities[j]*dt
+            c2,c3 = 3*delta-2*v0-v1, -2*delta+v0+v1
+            samples = [0.,1.]
+            if c3 and 0 < -c2/(3*c3) < 1:
+                samples.append(-c2/(3*c3))
+            peaks[name][0] = max(peaks[name][0], *(abs((v0+2*c2*u+3*c3*u*u)/dt) for u in samples))
+            peaks[name][1] = max(peaks[name][1], abs(2*c2/dt**2), abs((2*c2+6*c3)/dt**2))
+    return peaks
+
+
+def stop_ended_timing(trajectory, limits):
+    """Rest endpoints and monotone cubic joint interpolation; slow to limits.
+
+    Interior velocities use weighted harmonic slopes, avoiding joint-position
+    overshoot between waypoints. Empty acceleration fields select cubic spline
+    interpolation; actual cubic acceleration is bounded analytically below.
+    """
+    if not strictly_timed(trajectory):
+        raise ValueError('Cannot retime a leg with non-increasing times')
+    points = trajectory.joint_trajectory.points
+    names = trajectory.joint_trajectory.joint_names
+    n = len(names)
+    if any(len(p.positions)!=n or not all(math.isfinite(q) for q in p.positions) for p in points):
+        raise ValueError('Invalid leg positions')
+    intervals = [(nanoseconds(b)-nanoseconds(a))/1e9 for a,b in zip(points,points[1:])]
+    slopes = [[(b.positions[j]-a.positions[j])/dt for j in range(n)]
+              for a,b,dt in zip(points,points[1:],intervals)]
+    for p in points:
+        p.velocities = [0.] * n
+        p.accelerations = []
+    for i in range(1,len(points)-1):
+        before,after = intervals[i-1],intervals[i]
+        w1,w2 = 2*after+before,after+2*before
+        for j in range(n):
+            left,right = slopes[i-1][j],slopes[i][j]
+            if left*right>0:
+                points[i].velocities[j] = (w1+w2)/(w1/left+w2/right)
+    factor = 1.
+    for name,(velocity,acceleration) in joint_peaks(trajectory).items():
+        vmax,amax = limits[name]
+        if not all(math.isfinite(v) and v>0 for v in (vmax,amax)):
+            raise ValueError(f'Invalid scaled limits for {name}')
+        factor = max(factor, velocity/vmax, math.sqrt(acceleration/amax))
+    factor *= 1.01
+    for p in points:
+        p.time_from_start.sec,p.time_from_start.nanosec = divmod(round(nanoseconds(p)*factor),1000000000)
+        p.velocities = [v/factor for v in p.velocities]
+    if not strictly_timed(trajectory):
+        raise ValueError('Rest-endpoint retiming produced invalid time')
+    for name,(velocity,acceleration) in joint_peaks(trajectory).items():
+        vmax,amax = limits[name]
+        if velocity>vmax*(1+1e-6) or acceleration>amax*(1+1e-6):
+            raise ValueError(f'Retimed joint limit exceeded: {name}')
+    return factor
 
 
 def nanoseconds(point):

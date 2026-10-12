@@ -649,8 +649,14 @@ If MoveIt returns duplicate/non-increasing timestamps for a repeated path,
 the planner removes only exactly identical states at equal timestamps. If
 timing is still invalid, it replans each sharp-turn leg with the same collision,
 joint and jump constraints, seeds it from the preceding leg's endpoint, and
-joins stationary endpoints into one continuous-time trajectory. Shared
-endpoints occur once; turnarounds have zero velocity/acceleration. The joined
+explicitly retimes each leg with zero endpoint velocities. Monotone cubic
+joint interpolation preserves waypoint positions without joint overshoot;
+velocity and acceleration extrema are checked analytically against the live
+URDF/MoveIt limits at the requested scales, and time is increased as needed.
+Acceleration fields are empty to select cubic controller interpolation;
+this does not mean physical acceleration is zero. The planner then joins
+stationary endpoints into one continuous-time trajectory. Shared
+endpoints occur once; turnarounds have zero velocity. The joined
 trajectory receives the usual sampled spline TCP-speed check and slowdown.
 Actual motion at each turnaround stops and reverses while extrusion remains
 on, so pooling at those points is part of the deposition test. Invalid

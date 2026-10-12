@@ -6,8 +6,9 @@ from types import SimpleNamespace as S
 import unittest
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src/surface_printing'))
 from surface_printing.cartesian_timing import (
-    strictly_timed, split_legs, join_legs, remove_identical_time_duplicates)
-from surface_printing.tcp_speed import retime, verify
+    strictly_timed, split_legs, join_legs, remove_identical_time_duplicates,
+    stop_ended_timing, joint_peaks)
+from surface_printing.tcp_speed import retime, verify, coefficients
 from test_tcp_speed import XML
 
 
@@ -20,6 +21,39 @@ def leg(a,b):
 
 
 class CartesianTiming(unittest.TestCase):
+    def test_nonzero_moveit_endpoints_are_explicitly_retimed(self):
+        parts=[leg(0,.01),leg(.01,0),leg(0,.01)]
+        limits={'j':(.005,.01)}
+        for part in parts:
+            for p in part.joint_trajectory.points:
+                p.velocities=[.1];p.accelerations=[.3]
+            self.assertGreater(stop_ended_timing(part,limits),1.)
+            self.assertEqual(part.joint_trajectory.points[0].velocities,[0.])
+            self.assertEqual(part.joint_trajectory.points[-1].velocities,[0.])
+            self.assertEqual(part.joint_trajectory.points[0].accelerations,[])
+        joined=join_legs(parts)
+        vmax,amax=joint_peaks(joined)['j']
+        self.assertLessEqual(vmax,.005)
+        self.assertLessEqual(amax,.01)
+        retime(joined,XML,'tip',2)
+        verify(joined,XML,'tip',2)
+        self.assertLessEqual(joint_peaks(joined)['j'][1],.01)
+
+    def test_interior_motion_is_smooth_without_joint_overshoot(self):
+        t=leg(0,.01)
+        middle=copy.deepcopy(t.joint_trajectory.points[0])
+        middle.positions=[.004];middle.time_from_start.nanosec=300000000
+        t.joint_trajectory.points.insert(1,middle)
+        stop_ended_timing(t,{'j':(.1,.1)})
+        self.assertGreater(t.joint_trajectory.points[1].velocities[0],0)
+        for a,b in zip(t.joint_trajectory.points,t.joint_trajectory.points[1:]):
+            dt=(b.time_from_start.sec-a.time_from_start.sec)+(b.time_from_start.nanosec-a.time_from_start.nanosec)/1e9
+            c=coefficients(a,b,dt)
+            for i in range(101):
+                q=sum(c[k][0]*(i/100)**k for k in range(len(c)))
+                self.assertGreaterEqual(q,a.positions[0]-1e-12)
+                self.assertLessEqual(q,b.positions[0]+1e-12)
+
     def test_three_reversals_keep_geometry_and_validate_speed(self):
         parts=[leg(0,.01),leg(.01,0),leg(0,.01)]
         original=copy.deepcopy(parts)
