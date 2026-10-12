@@ -115,6 +115,19 @@ class DemoSafety(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'pulse budget'):
             validate_pulse_budget(10/.5+3,175,100,3000)
 
+    def test_long_runs_use_configured_duration(self):
+        validate_pulse_budget(650,200,900,0)
+        validate_budget(650,.1,900,2)
+        with self.assertRaisesRegex(ValueError,'time or pulse budget'):
+            validate_pulse_budget(650,200,600,0)
+        with self.assertRaisesRegex(ValueError,'time or volume budget'):
+            validate_budget(650,.1,600,2)
+        for limit in [0,-1,float('nan'),float('inf')]:
+            with self.assertRaises(ValueError):
+                validate_pulse_budget(650,200,limit,0)
+            with self.assertRaises(ValueError):
+                validate_budget(650,.1,limit,2)
+
     def test_invalid_frequency_budgets(self):
         for rate in [-1,0,175.5,5001,float('nan'),float('inf')]:
             with self.assertRaises(ValueError):validate_pulse_budget(1,rate,100,3000)
