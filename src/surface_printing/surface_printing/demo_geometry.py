@@ -3,8 +3,8 @@ import math
 
 
 def demo_offsets(shape, size_mm, spacing_mm=1.0):
-    if not math.isfinite(size_mm) or not 5 <= size_mm <= 100:
-        raise ValueError('size_mm must be 5..100')
+    if not math.isfinite(size_mm) or not 0.1 <= size_mm <= 100:
+        raise ValueError('size_mm must be 0.1..100')
     if not math.isfinite(spacing_mm) or not 0.1 <= spacing_mm <= 2:
         raise ValueError('spacing_mm must be 0.1..2')
     size = size_mm / 1000.0
@@ -25,6 +25,23 @@ def demo_offsets(shape, size_mm, spacing_mm=1.0):
         out.extend([(a[0]+(b[0]-a[0])*i/n, a[1]+(b[1]-a[1])*i/n)
                     for i in range(1, n+1)])
     return out
+
+
+def repeat_offsets(offsets, passes):
+    """Repeat a closed contour, or alternate direction over an open segment."""
+    if isinstance(passes, bool) or not isinstance(passes, int) or not 1 <= passes <= 100:
+        raise ValueError('passes must be an integer in 1..100')
+    if len(offsets) < 2:
+        raise ValueError('Repeated path needs at least two points')
+    points = list(offsets)
+    closed = math.dist(points[0], points[-1]) <= 1e-12
+    if closed:
+        points[-1] = points[0]
+    result = list(points)
+    for index in range(1, passes):
+        traversal = points if closed or index % 2 == 0 else list(reversed(points))
+        result.extend(traversal[1:])
+    return result
 
 
 def validate_budget(duration, flow, max_seconds, max_volume):

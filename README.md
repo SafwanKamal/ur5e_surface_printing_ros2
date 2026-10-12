@@ -636,6 +636,52 @@ including ramps, `WATCHDOG OFF/ON`, `STATUS`, `STOP` and `ESTOP`.
 
 ### Capture, plan and check one line
 
+For repeatability paths, `make_demo_path` also accepts `passes` (default 1)
+and `spacing_mm` (default 1 mm). Sizes down to 0.1 mm are supported, including
+the 2 mm test. A line with `passes:=3` traverses the same segment out, back,
+out; it does not create three adjacent lines or an unplanned return move.
+Square/circle passes repeat the closed contour. Square size is side length;
+circle size is diameter. All passes are one CSV line and one robot trajectory.
+Extrusion, if enabled, continues through the turnarounds; the firmware ramps
+up once for the whole trajectory, not once per pass. This measures repeated
+traversal/deposition, rather than three separate approach-and-return cycles.
+
+Suggested initial series, all in world XY at fixed nozzle orientation:
+
+| Shape | size_mm | passes | Total commanded distance |
+| --- | --- | --- | --- |
+| line | 10 | 3 | 30 mm |
+| line | 5 | 3 | 15 mm |
+| line | 2 | 3 | 6 mm |
+| square | 10 | 1 | 40 mm |
+| circle | 10 | 1 | approximately 31.4 mm |
+
+Capture each test at the intended start, plan and inspect it independently,
+and use a fresh saved plan for each execution. With 200 Hz extrusion, start
+at a consistent 2 mm/s TCP target for these small tests. Verify plunger travel
+for the planned duration. Photograph against a scale and record actual plan
+duration, print width/height, endpoint alignment and corner/turnaround pooling.
+Repeated deposition on one line does not by itself measure absolute robot
+repeatability: use external position metrology for that claim.
+
+```bash
+ros2 run surface_printing make_demo_path --ros-args \
+  -p shape:=line -p size_mm:=10.0 -p passes:=3 -p spacing_mm:=0.25 \
+  -p direction:=-1.0 -p frame_id:=world -p link_name:=probe_tcp \
+  -p output_path:=/tmp/repeatability.csv
+ros2 run surface_printing plan_surface_path --ros-args \
+  -p csv_path:=/tmp/repeatability.csv -p frame_id:=world -p link_name:=probe_tcp \
+  -p cartesian_speed_mm_s:=2.0 -p velocity_scale:=0.10 \
+  -p acceleration_scale:=0.05 -p eef_step:=0.00025 \
+  -p output_path:=/tmp/repeatability_plan.yaml
+```
+
+Keep the robot and syringe launches running on domain 77. Start External
+Control and activate scaled_joint_trajectory_controller if inactive; skip
+activation if already active. Run hardware_preflight, check-only execution
+and RViz review before physical execution of each new plan. Capture from the
+current pose rather than reusing an expired/consumed plan after a test.
+
 These capture the live nozzle pose and plan without execution:
 
 ```bash

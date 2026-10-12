@@ -81,7 +81,7 @@ def capture(session, shape, size, plane, direction, output, height, pitch, step)
     if direction not in (-1, 1):
         raise ValueError('Direction must be -1 or +1')
     return ros_run('surface_printing', 'make_demo_path', shape=shape,
-                   size_mm=number(size, 'Size', 5, 100), plane=plane, direction=direction,
+                   size_mm=number(size, 'Size', 0.1, 100), plane=plane, direction=direction,
                    frame_id='world', link_name='probe_tcp', output_path=output)
 
 
