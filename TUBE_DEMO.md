@@ -103,10 +103,20 @@ and stop if material pools, the tip drags, or the structure cannot support itsel
 source /opt/ros/jazzy/setup.bash && source "$HOME/ur5e_ws/install/setup.bash" && export ROS_DOMAIN_ID=77 && read -r -p 'Verified extrusion flow (ml/min): ' TUBE_FLOW && ros2 run surface_printing hardware_preflight && ros2 run surface_printing execute_surface_print --ros-args -p trajectory_path:=/tmp/tube_plan.yaml -p simulation:=false -p execute:=true -p extrude:=true -p flow_ml_per_min:="$TUBE_FLOW" -p max_duration_sec:=100.0 -p max_volume_ml:=2.0 -p start_tolerance_rad:=0.005 -p hardware_confirmed:=true
 ```
 
-The executor hard ceiling is 100 seconds, including speed scaling and budget
-margin. At 2 mm/s, a 10 mm diameter, 1 mm height, 0.5 mm pitch helix is already
-about 31.4 seconds before scaling. The limits may reject a tall tube; do not disable them blindly. Start short and
-review planned duration and extrusion volume before increasing limits.
+The executor has no fixed 100-second ceiling. Set a finite positive
+`max_duration_sec` large enough for the planned duration divided by the
+robot speed-scaling factor, plus at least three seconds of stop reserve.
+The executor still enforces that configured timeout and monitors robot progress,
+feedback, syringe state, and keepalives throughout the print.
+
+For a 10 mm diameter, 10 mm height, 0.5 mm pitch helix with a 5 mm
+lead-in, nominal travel at 2 mm/s is about 317 seconds before scaling.
+For example, use `max_duration_sec:=900.0` if the actual estimated run plus
+reserve fits within 900 seconds. In frequency mode, explicitly set
+`step_rate_hz:=200.0`, `extrusion_direction:=-1`, and `max_pulses:=0`
+to retain the existing continuous-extrusion setting. Frequency mode does not
+provide a calibrated material volume; ensure sufficient plunger travel.
+Calibrated flow mode continues to enforce its configured volume budget.
 
 Pump stop in another sourced terminal (does not stop robot motion):
 
