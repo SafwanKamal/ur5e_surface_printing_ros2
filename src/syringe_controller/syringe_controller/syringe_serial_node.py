@@ -119,6 +119,7 @@ class SyringeSerialNode(Node):
 
             pending = bytearray()
             ready = False
+            protocol = None
 
             while time.monotonic() < deadline and not ready:
                 pending.extend(port.read(256))
@@ -126,7 +127,9 @@ class SyringeSerialNode(Node):
                 while b"\n" in pending:
                     line, _, pending = pending.partition(b"\n")
 
-                    if line.strip() == b"READY SYRINGE_DEMO_V1":
+                    if line.strip() in (b"READY SYRINGE_DEMO_V1",
+                                        b"READY SYRINGE_STEPPER_RAMP_ENABLE_V3"):
+                        protocol = line.strip().decode().split()[1]
                         ready = True
 
                 if len(pending) > 4096:
@@ -136,8 +139,10 @@ class SyringeSerialNode(Node):
 
             if not ready:
                 raise RuntimeError(
-                    "Arduino did not send READY; "
-                    "flash firmware/syringe_demo (SYRINGE_DEMO_V1) and check USB"
+                    "Arduino did not send a supported READY banner; "
+                    "close Serial Monitor/other controllers, check USB, "
+                    "then reset the Mega while this launch is waiting. "
+                    "Supported: SYRINGE_STEPPER_RAMP_ENABLE_V3 and SYRINGE_DEMO_V1"
                 )
 
             self.backend = SerialBackend(
@@ -145,6 +150,7 @@ class SyringeSerialNode(Node):
                 float(parameter("ack_timeout_sec")),
                 float(parameter("heartbeat_period_sec")),
                 self._status,
+                protocol=protocol,
             )
 
             if not self.backend.stop():
@@ -230,7 +236,7 @@ class SyringeSerialNode(Node):
 
         self.get_logger().info(
             "Syringe controller is ready "
-            "(pulse and volume APIs)"
+            f"({protocol}; direct MOVE steps Hz; pulse and volume APIs)"
         )
 
     def _status(self, line):

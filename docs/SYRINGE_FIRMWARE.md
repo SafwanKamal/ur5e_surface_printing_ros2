@@ -1,5 +1,38 @@
 # Ramped syringe firmware
 
+## Working V3 sketch (recommended)
+
+`firmware/syringe_stepper_ramped_enable/syringe_stepper_ramped_enable.ino`
+is based on the working sketch supplied by Safwan. Its pulse engine, 10 ms
+enable settling, 100 Hz starting speed, 1000 pulses/s² time-based ramp,
+250 ms progress reporting, and 20-second heartbeat watchdog are preserved.
+The original 2,000,000-pulse limit is removed; nonzero signed 32-bit MOVE
+arguments remain. MOV is a MOVE alias. No frequency-to-flow conversion is
+needed for `/syringe/move_plunger`.
+
+ROS detects `READY SYRINGE_STEPPER_RAMP_ENABLE_V3`, sends MOVE/START unchanged,
+and supplies PING internally. It does not send WATCHDOG configuration commands
+to V3. An already flashed working V3 sketch is supported without reflashing
+(that original sketch retains its own 2,000,000 limit).
+
+| V3 command | Meaning |
+| --- | --- |
+| `MOVE -2000 200` | Finite ramped move; signed PROGRESS and DONE counts |
+| `START -1 200` | Continuous ramped motion; maintain PING |
+| `STOP` | Ramp down, ACK STOPPING; STOPPED POS arrives after stopping |
+| `ESTOP` | Immediate stop and driver disable; ACK ESTOP |
+| `PING` | Heartbeat and PONG |
+| `STATUS` | Mode, position, rate, target, direction and driver state |
+| `ZERO` | Reset reported position while idle |
+
+The ROS `/syringe/stop` endpoint uses ESTOP for V3 to preserve immediate-stop
+semantics. RESET/READY, malformed feedback and firmware faults still latch in
+ROS; STOP acknowledgement alone does not clear them. V3 has no WATCHDOG
+configuration command or fixed firmware run-time cap. Host moves retain their
+100-second admission limit and heartbeat-loss detection.
+
+## Legacy DEMO_V1 sketch
+
 Upload `firmware/syringe_demo/syringe_demo.ino` to an Arduino Mega 2560.
 Updating or pulling the repository does not flash the board. Close Serial
 Monitor before launching ROS; use 115200 baud and Newline for manual commands.
@@ -43,9 +76,9 @@ Enable settles for 1 ms before the first pulse. Normal completion/`RAMP_STOP`
 retains holding torque for 300 ms, then disables. STOP, ESTOP and faults disable
 immediately. Check whether syringe pressure can back-drive the unpowered plunger.
 
-The 3000-pulse budget, 5000 Hz command cap, 120-second firmware run cap, optional
+The 5000 Hz command cap, 120-second firmware run cap, optional
 interlocks, latched faults and 2-second AVR reset watchdog remain. Continuous
-START also stops with `FAULT PULSE_BUDGET` at 3000 pulses. WATCHDOG OFF does not
+The fixed 3000-pulse cap is removed for MOVE and START. WATCHDOG OFF does not
 remove these protections or clear a latched fault. Reset restores heartbeat ON
 with the original 1500 ms timeout. Invalid commands still latch a fault.
 

@@ -3,7 +3,7 @@ syringe_serial_node:
     port: /dev/ttyACM0
     baud_rate: 115200
 
-    startup_timeout_sec: 5.0
+    startup_timeout_sec: 10.0
     ack_timeout_sec: 1.0
     move_timeout_margin_sec: 3.0
     heartbeat_period_sec: 0.2

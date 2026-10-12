@@ -597,11 +597,17 @@ scope, step-by-step use and known limitations.
 
 ### Controller and firmware
 
-The Mega firmware lives at `firmware/syringe_demo/syringe_demo.ino`. Git updates
-do not flash it. Pins: PUL+ 28, DIR+ 27, ENA+ 25, with common negative signal
+The recommended Mega firmware is the supplied working V3 sketch at
+`firmware/syringe_stepper_ramped_enable/syringe_stepper_ramped_enable.ino`.
+ROS now accepts `READY SYRINGE_STEPPER_RAMP_ENABLE_V3` directly: an already
+flashed working V3 board does not need reflashing just to use ROS. Its
+20-second watchdog is left intact; ROS sends PING and does not send the
+unsupported WATCHDOG configuration commands. The old
+`firmware/syringe_demo/syringe_demo.ino` remains supported as DEMO_V1.
+Git updates do not flash either sketch. Pins: PUL+ 28, DIR+ 27, ENA+ 25, with common negative signal
 inputs/ground. Enable control is active with provisional LOW polarity, ramps use
 1000 pulses/s², and normal idle disables after 300 ms. Verify polarity and
-back-driving under pressure. Boot handshake remains `READY SYRINGE_DEMO_V1`.
+back-driving under pressure. The ready log identifies the detected protocol.
 
 ```bash
 ros2 launch syringe_controller syringe.launch.py
@@ -613,11 +619,18 @@ ros2 action send_goal /syringe/dispense_volume syringe_interfaces/action/Dispens
 The dispense action moves the pump; verify free stroke, direction and a clear
 nozzle first. Current calibration is 555.555556 pulses/mL, 203.006329 pulses/mm,
 extrusion direction -1. These are estimates, not measured actual liquid delivery.
-Finite host goals are capped at 100 s; firmware runs are capped at 120 s.
+Finite host goals are capped at 100 s; DEMO_V1 firmware runs are capped at 120 s.
+V3 has its original 20-second no-heartbeat watchdog, without an absolute
+firmware run-time limit. The supplied V3 pulse engine and time-based 100 Hz
+ramp updates are preserved; the copied sketch removes its original 2,000,000
+count cap and adds MOV as an alias (signed 32-bit argument validation remains).
 There is no fixed 3000-pulse cap. Finite MOVE/MOV accepts nonzero signed
 32-bit pulse counts; START is stopped by STOP, a fault, or the run-time limit. Leased
 continuous flow expires after 2 s without renewal; host PING refreshes firmware's
-1.5 s serial-heartbeat deadline. Faults latch until cause inspection and reset.
+1.5 s serial-heartbeat deadline in DEMO_V1, or V3's 20-second deadline.
+ROS latches detected faults until inspection/restart. `/syringe/stop` sends
+ESTOP for V3, which immediately stops pulses and disables the driver;
+manual V3 STOP ramps down and replies ACK STOPPING while still moving.
 See [SYRINGE_FIRMWARE.md](docs/SYRINGE_FIRMWARE.md) for every serial command,
 including ramps, `WATCHDOG OFF/ON`, `STATUS`, `STOP` and `ESTOP`.
 
@@ -710,8 +723,9 @@ verified on the actual hardware. Firmware starts at `min(100, target)` Hz and
 ramps at 1000 pulses/s². `MOVE steps hz` (also accepted as `MOV steps hz`)
 ramps up and down over the finite pulse count. ROS synchronized printing uses
 `START direction hz`: the same ramp-up, then sustained target frequency until
-STOP or a safety limit. At 200 Hz the nominal ramp-up spans 15 pulse increments,
-roughly 0.1 s; actual timing depends on the Arduino loop. Safety STOP remains
+STOP or a safety limit. At 200 Hz the nominal ramp-up takes roughly 0.1 s;
+V3 updates speed every 10 ms, whereas DEMO_V1 uses pulse-distance
+ramp updates. Actual timing depends on the Arduino loop. ROS safety STOP remains
 immediate, not a ramp-down. No ramp constants were changed in this update.
 The MOV alias requires flashing this repository sketch. A Mega accepting MOV
 before this update may have a different sketch; its installed code cannot be
@@ -1728,6 +1742,8 @@ python3 -m pip install numpy pyyaml
 python3 -m unittest discover -s tests -v
 python3 -m compileall -q src/surface_printing src/syringe_controller src/ur5e_toolheads src/surface_printing_gui
 g++ -std=c++17 -I tests/firmware_stub tests/test_firmware.cpp -o /tmp/test_syringe_firmware
+g++ -std=c++17 -I tests/firmware_stub tests/test_firmware_v3.cpp -o /tmp/test_syringe_v3
+/tmp/test_syringe_v3
 /tmp/test_syringe_firmware
 ```
 

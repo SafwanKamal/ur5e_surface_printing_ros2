@@ -11,11 +11,14 @@ class SerialBackend:
         ack_timeout=1.0,
         heartbeat_period=0.2,
         status=None,
+        protocol="SYRINGE_DEMO_V1",
     ):
         self.port = port
         self.ack_timeout = ack_timeout
         self.heartbeat_period = heartbeat_period
         self.status = status or (lambda line: None)
+        self.protocol = protocol
+        self.feedback_timeout = 20.0 if protocol == "SYRINGE_STEPPER_RAMP_ENABLE_V3" else 1.0
 
         self.cv = threading.Condition(threading.RLock())
         self.command_lock = threading.Lock()
@@ -167,6 +170,9 @@ class SerialBackend:
             with self.cv:
                 if self.owner is not None or self.moving or self.fault:
                     return False
+            if self.protocol == "SYRINGE_STEPPER_RAMP_ENABLE_V3":
+                # V3 has a fixed 20-second watchdog and no WATCHDOG command.
+                return True
             for command in ("WATCHDOG TIMEOUT 1500", "WATCHDOG ON"):
                 if not self._ack(command, "WATCHDOG"):
                     self.fail("Watchdog setup unconfirmed; relaunch required")
@@ -242,9 +248,11 @@ class SerialBackend:
                 self.stops_pending -= 1
 
     def _stop_locked(self):
+        # V3 STOP means ramp-down (ACK STOPPING). ESTOP is its immediate stop.
+        command = "ESTOP" if self.protocol == "SYRINGE_STEPPER_RAMP_ENABLE_V3" else "STOP"
         acknowledged = self._ack(
-            "STOP",
-            "STOP",
+            command,
+            command,
             ignore_fault=True,
         )
 
@@ -372,7 +380,7 @@ class SerialBackend:
                 self.stop(expired_owner)
 
             elif active:
-                if time.monotonic() - self.last_rx > 1.0:
+                if time.monotonic() - self.last_rx > self.feedback_timeout:
                     self.fail("Firmware feedback lost; relaunch required")
                     self.stop()
                 elif time.monotonic() - self.motion_started >= 110.0:

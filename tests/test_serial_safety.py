@@ -63,6 +63,35 @@ class SerialSafety(unittest.TestCase):
         self.backend._line('DONE 300')
         self.assertTrue(self.backend.snapshot()['done'])
         self.assertFalse(self.backend.snapshot()['fault'])
+    def test_v3_protocol_commands_and_feedback(self):
+        self.backend.close()
+        self.port=Port()
+        self.backend=SerialBackend(self.port,ack_timeout=.08,heartbeat_period=.02,
+                                  protocol='SYRINGE_STEPPER_RAMP_ENABLE_V3')
+        self.assertTrue(self.backend.restore_watchdog())
+        self.assertEqual(self.port.commands, [])
+        self.assertTrue(self.backend.stop())
+        self.assertEqual(self.port.commands, ['ESTOP'])
+        self.assertTrue(self.backend.reserve('action'))
+        self.assertTrue(self.backend.start('MOVE -2000 200', 'action'))
+        self.backend._line('PROGRESS -200 OF -2000')
+        self.assertEqual(self.backend.snapshot()['progress'], 200)
+        self.backend._line('DONE -2000 POS -4000')
+        self.assertEqual(self.backend.snapshot()['completed'], 2000)
+        self.assertTrue(self.backend.snapshot()['done'])
+        self.assertFalse(self.backend.snapshot()['fault'])
+
+    def test_v3_heartbeat_and_watchdog_grace(self):
+        self.backend.close()
+        self.port=Port()
+        self.backend=SerialBackend(self.port,ack_timeout=.08,heartbeat_period=.02,
+                                  protocol='SYRINGE_STEPPER_RAMP_ENABLE_V3')
+        self.assertTrue(self.backend.reserve('action'))
+        self.assertTrue(self.backend.start('MOVE -2000 200', 'action'))
+        self.backend.last_rx=time.monotonic()-2
+        time.sleep(.06)
+        self.assertIn('PING', self.port.commands)
+        self.assertFalse(self.backend.snapshot()['fault'])
     def test_feedback_loss_stops(self):
         self.backend.reserve('action'); self.backend.start('START -1 9','action')
         self.port.reply=False; self.backend.last_rx=time.monotonic()-2
