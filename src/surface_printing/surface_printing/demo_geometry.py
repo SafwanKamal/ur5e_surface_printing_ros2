@@ -47,8 +47,8 @@ def repeat_offsets(offsets, passes):
 def validate_budget(duration, flow, max_seconds, max_volume):
     if not all(math.isfinite(v) and v > 0 for v in (duration, flow, max_seconds, max_volume)):
         raise ValueError('Duration, flow and limits must be finite and positive')
-    if not 0 < flow <= 5 or not max_seconds <= 100 or not max_volume <= 5:
-        raise ValueError('Demo limits: <=5 mL/min, <=100 seconds, <=5 mL')
+    if not 0 < flow <= 5 or not max_volume <= 5:
+        raise ValueError('Demo limits: <=5 mL/min, <=5 mL')
     if duration > max_seconds or flow * duration / 60 > max_volume:
         raise ValueError('Trajectory exceeds configured time or volume budget')
 
@@ -61,7 +61,5 @@ def validate_pulse_budget(duration, rate_hz, max_seconds, max_pulses):
         raise ValueError('step_rate_hz must be a whole number in 1..5000')
     if not math.isfinite(max_pulses) or max_pulses < 0 or max_pulses != int(max_pulses):
         raise ValueError('Pulse budget must be a nonnegative integer; 0 disables the count cap')
-    if max_seconds > 100:
-        raise ValueError('Run-time limit: <=100 seconds')
     if duration > max_seconds or (max_pulses > 0 and math.ceil(duration * rate_hz) > max_pulses):
         raise ValueError('Trajectory exceeds configured time or pulse budget')
