@@ -23,6 +23,17 @@ class MotionProfile(unittest.TestCase):
         self.assertLess(move_duration(3000, 5000), 100)
 
     def test_invalid(self):
-        for steps, rate in [(0, 100), (3001, 100), (1, 0), (1, 5001), (1, math.nan)]:
+        for steps, rate in [(0, 100), (2147483648, 100), (1, 0), (1, 5001), (1, math.nan)]:
             with self.assertRaises(ValueError):
                 move_duration(steps, rate)
+
+    def test_large_counts_and_exact_ramp_model(self):
+        self.assertLess(move_duration(10000, 200), 100)
+        self.assertGreater(move_duration(2147483647, 5000), 400000)
+        for count in [1, 2, 25, 30, 31, 32, 3001, 10000]:
+            for rate in [50, 100, 200, 5000]:
+                initial = min(100, rate)
+                expected = (1000 + 10 + sum(math.ceil(1000000 / min(rate,
+                    math.sqrt(initial**2 + 2000 * min(i, count - 1 - i))))
+                    for i in range(1, count))) / 1000000
+                self.assertEqual(move_duration(count, rate), expected)

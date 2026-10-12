@@ -38,11 +38,13 @@ def validate_budget(duration, flow, max_seconds, max_volume):
 
 def validate_pulse_budget(duration, rate_hz, max_seconds, max_pulses):
     """Conservative pulse bound: assumes full target rate throughout the run."""
-    if not all(math.isfinite(v) and v > 0 for v in (duration, rate_hz, max_seconds, max_pulses)):
+    if not all(math.isfinite(v) and v > 0 for v in (duration, rate_hz, max_seconds)):
         raise ValueError('Duration, frequency and pulse limits must be finite and positive')
     if rate_hz != int(rate_hz) or not 1 <= rate_hz <= 5000:
         raise ValueError('step_rate_hz must be a whole number in 1..5000')
-    if max_pulses != int(max_pulses) or max_pulses > 3000 or max_seconds > 100:
-        raise ValueError('Demo limits: <=3000 pulses and <=100 seconds')
-    if duration > max_seconds or math.ceil(duration * rate_hz) > max_pulses:
+    if not math.isfinite(max_pulses) or max_pulses < 0 or max_pulses != int(max_pulses):
+        raise ValueError('Pulse budget must be a nonnegative integer; 0 disables the count cap')
+    if max_seconds > 100:
+        raise ValueError('Run-time limit: <=100 seconds')
+    if duration > max_seconds or (max_pulses > 0 and math.ceil(duration * rate_hz) > max_pulses):
         raise ValueError('Trajectory exceeds configured time or pulse budget')

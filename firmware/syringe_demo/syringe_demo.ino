@@ -20,7 +20,7 @@ const uint32_t WATCHDOG_MS=1500, MAX_RUN_MS=120000;
 // Units are driver pulses (including microsteps), not full motor steps.
 const float START_RATE_HZ=100.0f, ACCEL_PULSES_S2=1000.0f;
 const uint32_t ENABLE_SETTLE_US=1000, IDLE_DISABLE_MS=300;
-const uint32_t MAX_PULSES=3000, MAX_RATE=5000, PULSE_US=10;
+const uint32_t MAX_RATE=5000, PULSE_US=10;
 
 bool moving=false, finiteMove=false, pulseHigh=false, faulted=false;
 int8_t direction=1;
@@ -118,15 +118,14 @@ void command(char *s) {
   bool isMove=!strcmp(cmd,"MOVE") || !strcmp(cmd,"MOV"), isStart=!strcmp(cmd,"START");
   if((!isMove && !isStart) || extra || !number(a,amount) || !number(b,rate) ||
      amount==0 || amount==(-2147483647L-1L) || rate<1 || rate>(long)MAX_RATE ||
-     (isStart && amount!=1 && amount!=-1) ||
-     (isMove && (uint32_t)labs(amount)>MAX_PULSES)) {
+     (isStart && amount!=1 && amount!=-1)) {
     trip("BAD_COMMAND"); return;
   }
   if(faulted) { Serial.println("ERROR LATCHED_RESET_REQUIRED"); return; }
   if(moving) { trip("BUSY"); return; }
   direction=amount>0 ? 1 : -1;
   if(interlock()) { trip("INTERLOCK"); return; }
-  count=0; target=isMove ? (uint32_t)labs(amount) : MAX_PULSES;
+  count=0; target=isMove ? (uint32_t)labs(amount) : 0;
   finiteMove=isMove; rampStopping=false; requestedRate=(uint32_t)rate;
   initialRate=rate<START_RATE_HZ ? (float)rate : START_RATE_HZ;
   currentRate=initialRate; intervalUs=(uint32_t)ceilf(1000000.0f/currentRate);
@@ -172,10 +171,9 @@ void loop() {
   if(ms-started>=MAX_RUN_MS) { trip("RUN_TIME_LIMIT"); return; }
   if(pulseHigh && (int32_t)(now-fallAt)>=0) {
     digitalWrite(PUL_PIN,LOW); pulseHigh=false;
-    if(count>=target) {
+    if(finiteMove && count>=target) {
       halt(false);
-      if(finiteMove) { Serial.print("DONE "); Serial.println(count); }
-      else trip("PULSE_BUDGET");
+      Serial.print("DONE "); Serial.println(count);
       return;
     }
     if(rampStopping && currentRate<=initialRate) {

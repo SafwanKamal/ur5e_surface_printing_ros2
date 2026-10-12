@@ -14,14 +14,14 @@ int main(){
  assert(!moving && count==2 && Serial.output.find("DONE 2")!=std::string::npos);
  reset();send("START -1 9");fake_us=1600000;loop();assert(!moving && faulted);
  reset();send("START -1 9");send("STOP");assert(!moving && !faulted && pins[PUL_PIN]==LOW);
- reset();send("MOVE -3001 10");assert(faulted && !moving);
+ reset();send("MOVE -10000 200");assert(!faulted && moving);send("STOP");
  reset();send("START 0 10");assert(faulted && !moving);
  reset();send("MOVE -2147483648 10");assert(faulted && !moving);
  reset();send("START 1 10 junk");assert(faulted && !moving);
- reset();send("START 1 10");count=MAX_PULSES;pulseHigh=true;fallAt=0;loop();assert(faulted && !moving);
+ reset();send("START 1 200");count=10000;pulseHigh=true;fallAt=0;loop();assert(!faulted && moving);send("STOP");
  reset();send("START 1 10");fake_us=120000000;lastPing=millis();loop();assert(faulted && !moving);
  // Exact finite counts and symmetric triangular/plateau profiles, both signs.
- for(long amount : {1L,-2L,25L,-1000L,3000L}) {
+ for(long amount : {1L,-2L,25L,-1000L,3000L,-10000L}) {
    for(long rate : {1L,50L,100L,500L,5000L}) {
      reset(); send("WATCHDOG OFF");
      std::string cmd="MOVE "+std::to_string(amount)+" "+std::to_string(rate);

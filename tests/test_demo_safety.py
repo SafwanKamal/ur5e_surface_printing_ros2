@@ -118,8 +118,15 @@ class DemoSafety(unittest.TestCase):
     def test_invalid_frequency_budgets(self):
         for rate in [-1,0,175.5,5001,float('nan'),float('inf')]:
             with self.assertRaises(ValueError):validate_pulse_budget(1,rate,100,3000)
-        for pulses in [0,3001,1.5,float('nan')]:
+        for pulses in [-1,1.5,float('nan')]:
             with self.assertRaises(ValueError):validate_pulse_budget(1,175,100,pulses)
+
+    def test_no_fixed_pulse_cap(self):
+        validate_pulse_budget(50,200,100,0)
+        validate_pulse_budget(50,200,100,10000)
+        n=self.node(); n.extruding=True; n.frequency_mode=True
+        n.max_pulses=0; n.flow_started-=20
+        n.tick()
 
     def test_frequency_service_is_direct(self):
         request=extract('execute_surface_print.py',['extrusion_request'],

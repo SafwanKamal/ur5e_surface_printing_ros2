@@ -345,7 +345,7 @@ class PrintingApp:
         self.buttons(p,[('1. Plan + publish RViz preview',self.plan_path),('2. Check saved plan (no motion)',self.check_plan)])
         self.section(p,'Rehearse or print the checked plan','Inspect the complete RViz trajectory before proceeding. Execution repeats model/start/scene/speed checks. A completed rehearsal consumes this plan; return to start and replan.')
         self.field(p,'step_rate_hz','Target pulse frequency (Hz; 0 selects legacy flow)','200')
-        self.field(p,'max_pulses','Pulse budget (<=3000)','3000')
+        self.field(p,'max_pulses','Optional pulse budget (0 = no count cap)','0')
         self.field(p,'flow','Legacy flow (mL/min; used only at 0 Hz)','1')
         self.field(p,'duration','Duration budget (s, <=100)','60')
         self.field(p,'volume','Legacy volume budget (mL; used only at 0 Hz)','1')

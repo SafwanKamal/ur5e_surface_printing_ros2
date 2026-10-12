@@ -36,7 +36,7 @@ class PrintNode(WorkNode):
         self.simulation=False; self.robot_goal=None; self.goal_future=None
         self.abort_pending_goal=False; self.deadline=math.inf; self.max_volume=1.
         self.effective_flow=0.; self.result_future=None
-        self.frequency_mode=False; self.step_rate=0.; self.max_pulses=3000
+        self.frequency_mode=False; self.step_rate=0.; self.max_pulses=0
         self.extrusion_direction=-1
         self.keepalive=self.create_publisher(Empty,'/syringe/flow_keepalive',10)
         self.status_sub=self.create_subscription(String,'/syringe/status',self.status,10)
@@ -89,7 +89,7 @@ class PrintNode(WorkNode):
                 raise RuntimeError('Syringe is not moving: '+self.health)
             if now-max(self.last_health,self.flow_started)>1.0:
                 raise RuntimeError('Syringe status stale')
-            if self.frequency_mode and (now-self.flow_started)*self.step_rate >= self.max_pulses:
+            if self.frequency_mode and self.max_pulses > 0 and (now-self.flow_started)*self.step_rate >= self.max_pulses:
                 raise RuntimeError('Extrusion pulse budget reached')
             if not self.frequency_mode and (now-self.flow_started)*self.effective_flow/60 >= self.max_volume:
                 raise RuntimeError('Extrusion volume budget reached')
@@ -155,7 +155,7 @@ def run(node):
     confirmed=bool(node.parameter('hardware_confirmed',False))
     node.step_rate=float(node.parameter('step_rate_hz',200.0))
     node.frequency_mode=node.step_rate != 0.0
-    node.max_pulses=node.parameter('max_pulses',3000)
+    node.max_pulses=node.parameter('max_pulses',0)
     node.extrusion_direction=node.parameter('extrusion_direction',-1)
     if node.extrusion_direction not in (-1,1):
         raise ValueError('extrusion_direction must be -1 or +1')

@@ -392,8 +392,8 @@ class SyringeSerialNode(Node):
                 rate * 60.0 / self.cal.pulses_per_ml
             )
 
-        if abs(steps) > 3000 or move_duration(steps, rate) > 100.0:
-            raise ValueError("Demo limit: <=3000 pulses and <=100 seconds per move")
+        if move_duration(steps, rate) > 100.0:
+            raise ValueError("Move exceeds the 100-second run-time limit")
         return steps, rate, effective
 
     def _goal(self, goal, volume):

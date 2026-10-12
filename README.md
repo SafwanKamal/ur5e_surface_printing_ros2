@@ -613,7 +613,9 @@ ros2 action send_goal /syringe/dispense_volume syringe_interfaces/action/Dispens
 The dispense action moves the pump; verify free stroke, direction and a clear
 nozzle first. Current calibration is 555.555556 pulses/mL, 203.006329 pulses/mm,
 extrusion direction -1. These are estimates, not measured actual liquid delivery.
-Finite host goals are capped at 100 s; firmware runs at 3000 pulses/120 s. Leased
+Finite host goals are capped at 100 s; firmware runs are capped at 120 s.
+There is no fixed 3000-pulse cap. Finite MOVE/MOV accepts nonzero signed
+32-bit pulse counts; START is stopped by STOP, a fault, or the run-time limit. Leased
 continuous flow expires after 2 s without renewal; host PING refreshes firmware's
 1.5 s serial-heartbeat deadline. Faults latch until cause inspection and reset.
 See [SYRINGE_FIRMWARE.md](docs/SYRINGE_FIRMWARE.md) for every serial command,
@@ -691,7 +693,7 @@ ROS_DOMAIN_ID=77 ros2 run surface_printing execute_surface_print --ros-args \
   -p trajectory_path:=/tmp/surface_line_plan.yaml \
   -p simulation:=false -p execute:=false -p extrude:=false \
   -p step_rate_hz:=200.0 -p extrusion_direction:=-1 \
-  -p max_pulses:=3000 -p max_duration_sec:=100.0
+  -p max_pulses:=0 -p max_duration_sec:=100.0
 
 # After reviewing the entire RViz path: physical motion AND extrusion.
 ROS_DOMAIN_ID=77 ros2 run surface_printing execute_surface_print --ros-args \
@@ -699,7 +701,7 @@ ROS_DOMAIN_ID=77 ros2 run surface_printing execute_surface_print --ros-args \
   -p simulation:=false -p execute:=true -p extrude:=true \
   -p hardware_confirmed:=true \
   -p step_rate_hz:=200.0 -p extrusion_direction:=-1 \
-  -p max_pulses:=3000 -p max_duration_sec:=100.0
+  -p max_pulses:=0 -p max_duration_sec:=100.0
 ```
 
 The target rate must be an integer in 1..5000 Hz; the syringe controller may have
@@ -716,14 +718,29 @@ before this update may have a different sketch; its installed code cannot be
 verified from the repository alone.
 The executor starts extrusion only after measured robot progress and maintains
 the same keepalive lease, status monitoring, cancellation and STOP handling.
-It conservatively checks `ceil(rate * duration)` against the chosen pulse budget
-(1..3000), then checks again using actual robot speed scaling plus 3 seconds of
-stop reserve before motion. At 200 Hz and 3000 pulses, that requires estimated
-robot duration plus reserve to be at most 15 seconds (robot duration <=12 s). A slower
-speed slider can therefore reject a nominal 10-second plan. Shorten the job if
-necessary; these limits match the firmware's existing pulse cap.
-Runtime pulse protection is a conservative rate-times-elapsed bound, not a
-measured pulse count or a material-flow sensor. Verify available plunger travel.
+`max_pulses:=0` (the default in terminal and GUI) disables the pulse-count budget.
+A positive value enables a user-selected conservative count budget using
+`ceil(rate * duration)` and actual speed scaling plus a 3-second stop reserve.
+There is no hard-coded 3000 ceiling. Time limits still apply when the count
+budget is disabled. Optional runtime pulse protection is a conservative
+rate-times-elapsed bound, not a measured count or material-flow sensor.
+Verify available plunger travel. Flash the updated sketch to remove the old
+firmware cap; updating ROS alone cannot change an Arduino's installed code.
+
+For syringe-only motion, leave `ros2 launch syringe_controller syringe.launch.py`
+running in one terminal. In a second sourced terminal on ROS_DOMAIN_ID=77:
+
+```bash
+ros2 action send_goal /syringe/move_plunger syringe_interfaces/action/MovePlunger \
+  '{steps: -2000, step_rate_hz: 200.0}' --feedback
+# Approximately 10 seconds including ramp overhead; sends MOVE -2000 200.
+ros2 service call /syringe/stop std_srvs/srv/Trigger '{}'
+```
+
+The direct action requires no material-flow calibration or client keepalive
+script. The controller sends firmware heartbeats. Stop a launch with Ctrl+C;
+Ctrl+Z suspends it and can leave the serial port held. Close Arduino Serial
+Monitor before launching ROS and run only one syringe controller.
 
 Before sending a robot goal, execution rejects a STOP response reporting a
 latched syringe fault, even if STOP itself was acknowledged. Malformed
