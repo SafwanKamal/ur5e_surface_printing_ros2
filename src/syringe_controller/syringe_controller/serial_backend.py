@@ -365,6 +365,11 @@ class SerialBackend:
         while not self.shutdown.wait(self.heartbeat_period):
             with self.cv:
                 active = self.moving and not self.fault
+                leased_flow = (
+                    isinstance(self.owner, tuple)
+                    and self.owner[0] == "flow"
+                    and self.lease_deadline is not None
+                )
 
                 expired_owner = (
                     self.owner
@@ -383,7 +388,9 @@ class SerialBackend:
                 if time.monotonic() - self.last_rx > self.feedback_timeout:
                     self.fail("Firmware feedback lost; relaunch required")
                     self.stop()
-                elif time.monotonic() - self.motion_started >= 110.0:
+                # Leased flow is bounded by renewable keepalives and the print
+                # executor's configured duration, rather than a fixed 110s cap.
+                elif not leased_flow and time.monotonic() - self.motion_started >= 110.0:
                     self.fail("Host maximum run time exceeded")
                     self.stop()
                 else:
