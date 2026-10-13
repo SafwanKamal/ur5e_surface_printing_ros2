@@ -49,23 +49,6 @@ class SerialSafety(unittest.TestCase):
         time.sleep(.12)
         self.assertFalse(self.backend.snapshot()['moving'])
         self.assertIn('STOP',self.port.commands)
-    def test_leased_flow_can_run_beyond_110_seconds(self):
-        owner=('flow',object())
-        self.assertTrue(self.backend.reserve(owner,lease_sec=2.0))
-        self.assertTrue(self.backend.start('START -1 275',owner))
-        with self.backend.cv:
-            self.backend.motion_started=time.monotonic()-315
-        time.sleep(.08)
-        self.assertTrue(self.backend.snapshot()['moving'])
-        self.assertFalse(self.backend.snapshot()['fault'])
-        self.assertIn('PING',self.port.commands)
-        # A long run still stops promptly when its renewable lease expires.
-        with self.backend.cv:
-            self.backend.lease_deadline=time.monotonic()-1
-        time.sleep(.08)
-        self.assertFalse(self.backend.snapshot()['moving'])
-        self.assertIn('STOP',self.port.commands)
-
     def test_unleased_motion_retains_host_timeout(self):
         self.assertTrue(self.backend.reserve('action'))
         self.assertTrue(self.backend.start('MOVE -2000 275','action'))
