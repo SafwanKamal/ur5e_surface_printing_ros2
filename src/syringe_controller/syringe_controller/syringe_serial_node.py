@@ -260,7 +260,7 @@ class SyringeSerialNode(Node):
         state = self.backend.snapshot()
 
         if state["fault"]:
-            value = "FAULT"
+            value = "FAULT " + state["fault"]
         elif state["moving"]:
             value = "MOVING"
         else:
