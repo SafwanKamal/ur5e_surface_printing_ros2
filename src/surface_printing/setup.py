@@ -28,6 +28,7 @@ setup(
             "make_demo_path = surface_printing.make_demo_path:main",
             "make_lead_circle_path = surface_printing.make_lead_circle_path:main",
             "make_lead_helix_path = surface_printing.make_lead_helix_path:main",
+            "make_column_tube_path = surface_printing.make_column_tube_path:main",
             "convert_surface_csv = surface_printing.convert_surface_csv:main",
             "plan_surface_path = "
             "surface_printing.plan_surface_path:main",
