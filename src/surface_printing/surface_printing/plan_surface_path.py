@@ -31,7 +31,7 @@ from rclpy.qos import (
 from rosidl_runtime_py.convert import message_to_ordereddict
 
 from .common import WorkNode, validate_trajectory
-from .tcp_speed import retime
+from .constant_speed import retime_constant, validate_targets
 from .cartesian_timing import (strictly_timed, split_legs, join_legs,
                                remove_identical_time_duplicates, configured_limits, stop_ended_timing, joint_peaks)
 from .demo_safety import live_model
@@ -167,9 +167,13 @@ def run(node):
             "(must be <= 0.01 m)"
         )
 
-    speed_mm_s = float(node.parameter("cartesian_speed_mm_s", 2.0))
-    if not math.isfinite(speed_mm_s) or not 0.1 <= speed_mm_s <= 10:
-        raise ValueError("Demo cartesian_speed_mm_s must be 0.1..10")
+    # A failed request must not leave an older plan at the requested output path.
+    Path(output).unlink(missing_ok=True)
+    # Existing command syntax remains an alias for the default maximum.
+    legacy_max = float(node.parameter("cartesian_speed_mm_s", 2.0))
+    speed_mm_s = float(node.parameter("max_cartesian_speed_mm_s", legacy_max))
+    average_mm_s = float(node.parameter("average_cartesian_speed_mm_s", speed_mm_s))
+    validate_targets(speed_mm_s, average_mm_s)
     xml, model_hash = live_model(node)
     poses = read_waypoints(
         csv_path,
@@ -289,50 +293,18 @@ def run(node):
             f"code={response.error_code.val}; no plan saved"
         )
 
-    duplicates = remove_identical_time_duplicates(response.solution)
-    if duplicates:
-        node.get_logger().info(f'Removed {duplicates} identical trajectory states at duplicate times')
-    if not strictly_timed(response.solution):
-        legs = split_legs(poses)
-        if len(legs) < 2:
-            raise RuntimeError('MoveIt returned non-increasing times on a single Cartesian leg; no plan saved')
-        node.get_logger().warning(
-            f'MoveIt returned non-increasing times; replanning {len(legs)} stationary-ended Cartesian legs')
-        leg_state = copy.deepcopy(state)
-        timed_legs = []
-        for index, waypoints in enumerate(legs):
-            leg_request = copy.deepcopy(request)
-            leg_request.start_state = leg_state
-            leg_request.waypoints = waypoints
-            leg = node.wait(planner.call_async(leg_request), 60.0)
-            if leg.error_code.val != 1 or leg.fraction < .999999:
-                raise RuntimeError(f'Cartesian leg {index+1} incomplete: fraction={leg.fraction}; no plan saved')
-            remove_identical_time_duplicates(leg.solution)
-            if not strictly_timed(leg.solution):
-                raise RuntimeError(f'Cartesian leg {index+1} has non-increasing time; no plan saved')
-            check_trajectory(leg.solution, wrist_bounds)
-            limits = configured_limits(xml, leg.solution.joint_trajectory.joint_names, scale, acceleration)
-            leg_factor = stop_ended_timing(leg.solution, limits)
-            node.get_logger().info(f'Leg {index+1}: explicit rest endpoints; joint-limit time scale {leg_factor:.3f}')
-            timed_legs.append(leg.solution)
-            positions = dict(zip(leg.solution.joint_trajectory.joint_names,
-                                 leg.solution.joint_trajectory.points[-1].positions))
-            leg_state = copy.deepcopy(leg_state)
-            leg_state.joint_state.position = [positions.get(name, position) for name, position in
-                zip(leg_state.joint_state.name, leg_state.joint_state.position)]
-            leg_state.joint_state.velocity = [0.] * len(leg_state.joint_state.name)
-        response.solution = join_legs(timed_legs)
-        for name,(v,a) in joint_peaks(response.solution).items():
-            vmax,amax = limits[name]
-            if v>vmax*(1+1e-6) or a>amax*(1+1e-6):
-                raise RuntimeError(f'Joined leg exceeds scaled joint limits: {name}; no plan saved')
-        node.get_logger().info('Cartesian legs joined at rest; extrusion can remain continuous')
+    # Rebuild timing from the IK path rather than MoveIt's original timestamps.
     check_trajectory(response.solution, wrist_bounds)
-    speed_check = retime(response.solution, xml, link, speed_mm_s, wrist_bounds)
+    limits = configured_limits(xml, response.solution.joint_trajectory.joint_names,
+                               scale, acceleration)
+    limits = {name: (min(v, .3), a) for name, (v, a) in limits.items()}
+    speed_check = retime_constant(response.solution, xml, link, speed_mm_s,
+                                  average_mm_s, limits, wrist_bounds)
     node.get_logger().info(
-        f"TCP speed check: {speed_check['before_peak_mm_s']:.3f} -> "
-        f"{speed_check['after_peak_mm_s']:.3f} mm/s sampled peak; "
-        f"time scale {speed_check['time_scale']:.3f}")
+        f"Cartesian target {average_mm_s:.3f} mm/s; maximum {speed_mm_s:.3f} mm/s; "
+        f"sampled peak {speed_check['after_peak_mm_s']:.3f} mm/s; "
+        f"distance in target band {100*speed_check['coverage_fraction']:.2f}%; "
+        f"overall average {speed_check['overall_average_mm_s']:.3f} mm/s")
     duration = validate_trajectory(
         response.solution
     )
@@ -370,6 +342,10 @@ def run(node):
         "model_sha256": model_hash,
         "group_name": group,
         "cartesian_speed_mm_s": speed_mm_s,
+        "max_cartesian_speed_mm_s": speed_mm_s,
+        "average_cartesian_speed_mm_s": average_mm_s,
+        "velocity_scale": scale,
+        "acceleration_scale": acceleration,
         "source_csv": str(Path(csv_path).resolve()),
         "frame_id": frame,
         "link_name": link,

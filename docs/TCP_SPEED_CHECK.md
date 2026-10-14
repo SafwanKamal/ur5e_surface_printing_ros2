@@ -1,3 +1,9 @@
+# TCP speed checks
+
+New planner runs use locally retimed consistent-speed trajectories. See [CONSTANT_SPEED.md](CONSTANT_SPEED.md) for the maximum/average parameters, 90% distance coverage requirement and measured execution reporting.
+
+The following describes legacy global retiming retained for older plans and regression compatibility:
+
 # Independent TCP speed checks
 
 The planner reconstructs the requested TCP's Jacobian from the live MoveIt URDF and samples joint-controller spline interpolation at 101 normalized locations per segment. It supports linear, cubic and quintic interpolation according to the supplied derivative fields, rejects unsupported/missing model joints, and checks interpolated Wrist 3 samples against the configured range.

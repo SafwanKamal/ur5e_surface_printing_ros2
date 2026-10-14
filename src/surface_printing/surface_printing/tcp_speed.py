@@ -51,6 +51,42 @@ class TCPModel:
             tip = j.find('parent').get('link')
         self.chain.reverse()
 
+    def position(self, q):
+        pos = np.zeros(3); rot = np.eye(3)
+        for xyz, origin_rot, kind, index, axis in self.chain:
+            pos = pos + rot@xyz; rot = rot@origin_rot
+            if index is not None:
+                if kind == 'prismatic': pos = pos + rot@axis*q[index]
+                else: rot = rot@rotation(axis,q[index])
+        return pos
+
+    def speeds(self, q, dq):
+        """Vectorized Jacobian speeds for arrays of joint samples."""
+        q=np.asarray(q,dtype=float); dq=np.asarray(dq,dtype=float)
+        count=len(q)
+        pos=np.zeros((count,3)); rot=np.repeat(np.eye(3)[None,:,:],count,axis=0)
+        axes=[]
+        for xyz, origin_rot, kind, index, axis in self.chain:
+            pos=pos+np.einsum('nij,j->ni',rot,xyz)
+            rot=rot@origin_rot
+            if index is not None:
+                world_axis=np.einsum('nij,j->ni',rot,axis)
+                axes.append((pos.copy(),world_axis,kind,index))
+                if kind=='prismatic':
+                    pos=pos+world_axis*q[:,index,None]
+                else:
+                    x,y,z=axis
+                    k=np.array([[0,-z,y],[z,0,-x],[-y,x,0]])
+                    angle=q[:,index]
+                    local=(np.eye(3)[None,:,:]+np.sin(angle)[:,None,None]*k+
+                           (1-np.cos(angle))[:,None,None]*(k@k))
+                    rot=rot@local
+        velocity=np.zeros((count,3))
+        for center,axis,kind,index in axes:
+            jacobian=axis if kind=='prismatic' else np.cross(axis,pos-center)
+            velocity+=dq[:,index,None]*jacobian
+        return np.linalg.norm(velocity,axis=1)
+
     def speed(self, q, dq):
         pos = np.zeros(3); rot = np.eye(3); axes = []
         for xyz, origin_rot, kind, index, axis in self.chain:

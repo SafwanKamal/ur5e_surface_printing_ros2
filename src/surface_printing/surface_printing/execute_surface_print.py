@@ -18,7 +18,10 @@ from syringe_interfaces.srv import SetFlow, SetExtrusion
 from std_msgs.msg import String
 from .common import WorkNode, validate_trajectory, speed_scaling_fraction
 from .demo_geometry import validate_budget, validate_pulse_budget
-from .tcp_speed import verify as verify_tcp_speed
+from .tcp_speed import verify as verify_tcp_speed, TCPModel
+from .constant_speed import verify_constant
+from .cartesian_timing import configured_limits
+from .speed_tracking import SpeedTracker
 from .wrist_guard import load_bounds, check_state, check_trajectory
 from .demo_safety import (live_model, calibrated_tool, check_scene,
                           require_controller_mode, require_mock_model,
@@ -38,6 +41,8 @@ class PrintNode(WorkNode):
         self.effective_flow=0.; self.result_future=None
         self.frequency_mode=False; self.step_rate=0.; self.max_pulses=0
         self.extrusion_direction=-1
+        self.speed_tracker=None
+        self.last_speed_log=0.
         self.keepalive=self.create_publisher(Empty,'/syringe/flow_keepalive',10)
         self.status_sub=self.create_subscription(String,'/syringe/status',self.status,10)
         self.scale_sub=self.create_subscription(Float64,
@@ -78,6 +83,14 @@ class PrintNode(WorkNode):
             if any(n not in current or not math.isfinite(current[n]) for n in self.joint_names):
                 raise RuntimeError('Invalid robot feedback')
             if hasattr(self, 'wrist_bounds'): check_state(self.joints, self.wrist_bounds)
+            if getattr(self, 'speed_tracker', None) is not None:
+                self.speed_tracker.update(self.joints)
+                if self.motion_seen and now-getattr(self,'last_speed_log',0.)>=5.:
+                    self.last_speed_log=now
+                    measured=self.speed_tracker.report()
+                    self.get_logger().info(
+                        f"Measured tip {self.speed_tracker.last_speed:.3f} mm/s; "
+                        f"target-band distance so far {100*measured['measured_coverage']:.1f}%")
             positions=[current[n] for n in self.joint_names]
             if self.motion_reference is None: self.motion_reference=positions
             if max(abs(a-b) for a,b in zip(positions,self.motion_reference))>0.00005:
@@ -186,8 +199,25 @@ def run(node):
     if data.get('link_name') not in ('probe_tcp','nozzle_tcp'):
         raise ValueError('Demo execution requires the calibrated nozzle link')
     if model_hash!=data.get('model_sha256'): raise RuntimeError('Robot model changed; replan')
-    verify_tcp_speed(trajectory, xml, data['link_name'],
-                     data['cartesian_speed_mm_s'], node.wrist_bounds)
+    node.speed_tracker=None
+    if 'average_cartesian_speed_mm_s' in data:
+        limits=configured_limits(xml,trajectory.joint_trajectory.joint_names,
+                                 data['velocity_scale'],data['acceleration_scale'])
+        limits={name:(min(v,.3),a) for name,(v,a) in limits.items()}
+        speed_report=verify_constant(trajectory,xml,data['link_name'],
+                                     data['max_cartesian_speed_mm_s'],
+                                     data['average_cartesian_speed_mm_s'],
+                                     node.wrist_bounds,limits)
+        node.get_logger().info(
+            f"Verified target-speed coverage: {100*speed_report['coverage_fraction']:.2f}% "
+            f"of path within +/-5% of {data['average_cartesian_speed_mm_s']:.3f} mm/s")
+        node.speed_tracker=SpeedTracker(
+            TCPModel(xml,data['link_name'],list(trajectory.joint_trajectory.joint_names)),
+            trajectory.joint_trajectory.joint_names,data['max_cartesian_speed_mm_s'],
+            data['average_cartesian_speed_mm_s'],speed_report['path_length_mm'])
+    else:
+        verify_tcp_speed(trajectory, xml, data['link_name'],
+                         data['cartesian_speed_mm_s'], node.wrist_bounds)
     if node.simulation:
         require_mock_model(xml)
     else:
@@ -212,6 +242,9 @@ def run(node):
             if time.monotonic()>deadline: raise RuntimeError('No fresh UR speed scaling factor')
             rclpy.spin_once(node,timeout_sec=.02)
         node.baseline_scale=speed_scaling_fraction(node.scale)
+        if node.speed_tracker is not None and abs(node.baseline_scale-1.)>.01:
+            raise RuntimeError('Target-speed execution requires effective UR speed scaling '
+                               'at 100%; current factor='+str(node.baseline_scale))
     actual_estimate=duration/(1. if node.simulation else node.baseline_scale)
     # Reserve stop latency in the pulse/volume budget (lease + firmware timeout).
     budget(actual_estimate+3.)
@@ -265,6 +298,15 @@ def run(node):
     if response.status!=GoalStatus.STATUS_SUCCEEDED or response.result.error_code.val!=1:
         raise RuntimeError(f'Robot failed: status={response.status}, code={response.result.error_code.val}')
     node.robot_goal=None
+    if node.speed_tracker is not None:
+        measured=node.speed_tracker.report()
+        node.get_logger().info(
+            f"Measured TCP speed: average {measured['measured_average_mm_s']:.3f} mm/s; "
+            f"peak {measured['measured_peak_mm_s']:.3f} mm/s; "
+            f"target-band distance {100*measured['measured_coverage']:.2f}%; "
+            f"{measured['measurement_windows']} measurement windows")
+        if measured['measurement_windows']==0 or measured['measured_coverage']<.90:
+            raise RuntimeError('Execution finished but measured target-speed coverage was below 90%')
     node.get_logger().info('Demo completed; pump stopped. No automatic retract or travel.')
 
 
