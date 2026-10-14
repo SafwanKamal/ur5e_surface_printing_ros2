@@ -3,8 +3,8 @@
 The planner now has two explicit speed parameters:
 
 - max_cartesian_speed_mm_s: maximum sampled translational speed at the chosen tip.
-- average_cartesian_speed_mm_s: requested steady deposition speed, which must be
-  maintained within +/-5% over at least 90% of traveled TCP distance.
+- average_cartesian_speed_mm_s: requested steady deposition speed. The percentage
+  of traveled distance within +/-5% is reported, not used as an admission limit.
 
 The second parameter is a local cruising-speed target, not a promise that total
 distance divided by total elapsed time equals the target. The planner reports
@@ -13,8 +13,9 @@ and necessary turns are included in the coverage denominator.
 
 For existing commands, cartesian_speed_mm_s remains an alias supplying the
 default maximum. If the new average parameter is omitted, it defaults to the
-maximum. New plans use the consistent-speed retimer; there is no silent fallback
-to globally slow timing if 90% coverage cannot be achieved.
+maximum. New plans use the consistent-speed retimer. Necessary slowdowns are
+allowed even when target-band coverage is below 90%; the achieved planned
+average and coverage remain visible in the log and saved metadata.
 
 ## Timing algorithm
 
@@ -33,8 +34,8 @@ global 5% speed reduction. Final spline validation uses 101 samples per interval
 Joint velocity and acceleration extrema are checked analytically for each cubic.
 
 The target-band percentage is integrated by traveled TCP distance using the
-sampled Jacobian speed, not by waypoint count or time. If coverage is below 90%,
-planning fails with an explanation and no new executable plan is saved.
+sampled Jacobian speed, not by waypoint count or time. There is no minimum
+target-band coverage requirement; a valid slower plan can be saved and executed.
 The previous output file is removed before attempting the new speed plan to
 avoid accidentally executing old timing after a failure.
 
@@ -54,10 +55,10 @@ ROS_DOMAIN_ID=77 ros2 run surface_printing plan_surface_path --ros-args \
 
 The 1.2 maximum is allowable headroom; it is not the cruising target.
 Use maximum=1.0 and average=1.0 if the peak must remain at 1 mm/s.
-If that combination is infeasible, the planner rejects it rather than silently
-lowering the deposition speed. To apply to columns, use /tmp/column_tube.csv
-and /tmp/column_tube_plan.yaml. Sharp short connectors can make 90% coverage
-harder than on a smooth helix.
+If the requested target cannot be maintained under the joint limits, intervals
+are slowed and the achieved speed is reported. To apply to columns, use
+/tmp/column_tube.csv and /tmp/column_tube_plan.yaml. Sharp short connectors can
+reduce target-band coverage compared with a smooth helix.
 
 ## Execution and measured feedback
 
@@ -75,7 +76,9 @@ Measured speed is report-only. Neither overspeed readings nor low measured
 target-band coverage cancel execution or turn successful completion into failure.
 The executor logs average, peak and coverage and emits summary warnings if needed.
 The planner and the executor's pre-motion trajectory validation still enforce
-the maximum and 90% target coverage on the commanded plan.
+the maximum TCP speed and scaled joint limits on the commanded plan.
+Commanded target-band coverage is also report-only, including during pre-motion
+validation of previously saved plans.
 Existing robot, syringe, keepalive, feedback and configured-duration checks
 remain active. See [ABORT_RECOVERY.md](ABORT_RECOVERY.md) for stop verification.
 
@@ -92,8 +95,9 @@ Regenerate and replan to obtain the new timing and measured coverage behavior.
 ## Validation
 
 Tests cover line and helix timing, nonuniform sample spacing, a revolute chain,
-equal maximum/target settings, infeasible joint limits, corner-heavy short paths,
-tampered timing, rest endpoints, geometry preservation, vectorized Jacobian
+equal maximum/target settings, targets slowed to respect joint limits,
+corner-heavy short paths and slowed timing accepted below 90% coverage,
+maximum-speed and joint-limit violation rejection, rest endpoints, geometry preservation, vectorized Jacobian
 agreement, report-only overspeed and low measured coverage, repeated timestamps
 and clock reversal. Existing TCP speed, Cartesian timing and executor tests
 are also run. No robot or ROS transport is available in the development container.

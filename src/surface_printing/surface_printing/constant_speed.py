@@ -8,7 +8,7 @@ import numpy as np
 from .tcp_speed import TCPModel, coefficients, seconds
 
 TOLERANCE = .05
-MIN_COVERAGE = .90
+REFERENCE_COVERAGE = .90
 
 
 def segment_report(a, b, model, names, limits=None, wrist_bounds=None, samples=101):
@@ -70,15 +70,12 @@ def verify_constant(trajectory,xml,tip,maximum,average,wrist_bounds=None,limits=
     duration=seconds(jt.points[-1])-seconds(jt.points[0])
     report=dict(method='local_cartesian_cubic_v1',after_peak_mm_s=peak,
                 target_mm_s=average,max_mm_s=maximum,tolerance_fraction=TOLERANCE,
-                minimum_coverage=MIN_COVERAGE,coverage_fraction=matched/length,
+                coverage_reference_fraction=REFERENCE_COVERAGE,coverage_enforced=False,
+                coverage_fraction=matched/length,
                 path_length_mm=length,overall_average_mm_s=length/duration,
                 distance_weighted_speed_mm_s=weighted_speed/length)
     if peak>maximum*(1+1e-6):
         raise ValueError(f'Sampled TCP peak {peak:.4f} exceeds maximum {maximum:.4f}')
-    if matched/length+1e-9<MIN_COVERAGE:
-        raise ValueError(f'Target speed coverage {100*matched/length:.2f}% < 90%; '
-                         'target is infeasible with this path and joint limits. '
-                         'Reduce target speed or change sharp transitions; no plan saved')
     return report
 
 

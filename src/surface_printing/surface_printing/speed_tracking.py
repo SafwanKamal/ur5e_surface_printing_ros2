@@ -4,7 +4,7 @@ Finite-difference windows are measurement estimates, not continuous-time proof.
 """
 import math
 import numpy as np
-from .constant_speed import TOLERANCE, MIN_COVERAGE
+from .constant_speed import TOLERANCE, REFERENCE_COVERAGE
 
 
 class SpeedTracker:
@@ -50,6 +50,6 @@ class SpeedTracker:
                     measured_coverage=self.matched/self.length if self.length else 0.,
                     measurement_windows=self.windows,
                     measured_max_exceeded=self.peak>self.maximum*(1+TOLERANCE),
-                    measured_target_met=(self.matched/self.length>=MIN_COVERAGE)
+                    measured_target_met=(self.matched/self.length>=REFERENCE_COVERAGE)
                     if self.length else False)
 

@@ -47,17 +47,24 @@ class ConstantSpeedTests(unittest.TestCase):
         self.assertGreaterEqual(r['coverage_fraction'],.90)
         self.assertLessEqual(r['after_peak_mm_s'],1.)
 
-    def test_short_corner_heavy_path_rejected(self):
+    def test_short_corner_heavy_path_saves_low_coverage(self):
         points=[(x,0,0) for x in np.linspace(0,.0002,3)]
         points += [(.0002,y,0) for y in np.linspace(0,.0002,3)[1:]]
         t=trajectory(points)
-        with self.assertRaisesRegex(ValueError,'coverage'):
-            retime_constant(t,XML,'tip',1.,1.,{n:(.001,.00001) for n in LIMITS})
+        limits={n:(.001,.00001) for n in LIMITS}
+        report=retime_constant(t,XML,'tip',1.,1.,limits)
+        self.assertLess(report['coverage_fraction'],.90)
+        self.assertFalse(report['coverage_enforced'])
+        self.assertLessEqual(report['after_peak_mm_s'],1.)
+        verify_constant(t,XML,'tip',1.,1.,limits=limits)
 
-    def test_joint_limit_infeasible_rejected(self):
+    def test_target_unreachable_slowed_to_joint_limits(self):
         t=trajectory([(x,0,0) for x in np.linspace(0,.03,301)])
-        with self.assertRaisesRegex(ValueError,'coverage'):
-            retime_constant(t,XML,'tip',1.2,1.,{n:(.0005,.03) for n in LIMITS})
+        limits={n:(.0005,.03) for n in LIMITS}
+        report=retime_constant(t,XML,'tip',1.2,1.,limits)
+        self.assertLess(report['coverage_fraction'],.90)
+        self.assertLessEqual(report['after_peak_mm_s'],.500001)
+        verify_constant(t,XML,'tip',1.2,1.,limits=limits)
 
     def test_bad_targets_and_tampered_timing(self):
         for maximum,target in [(1,2),(0,1),(1,float('nan'))]:
@@ -71,8 +78,17 @@ class ConstantSpeedTests(unittest.TestCase):
             if p.time_from_start.nanosec>=1000000000:
                 p.time_from_start.sec+=1;p.time_from_start.nanosec-=1000000000
             p.velocities=[v/2 for v in p.velocities]
-        with self.assertRaisesRegex(ValueError,'coverage'):
-            verify_constant(t,XML,'tip',1.2,1,limits=LIMITS)
+        report=verify_constant(t,XML,'tip',1.2,1,limits=LIMITS)
+        self.assertLess(report['coverage_fraction'],.90)
+        self.assertFalse(report['coverage_enforced'])
+
+    def test_maximum_speed_and_joint_limits_still_reject_violations(self):
+        t=trajectory([(x,0,0) for x in np.linspace(0,.03,301)])
+        retime_constant(t,XML,'tip',1.2,1.,LIMITS)
+        with self.assertRaisesRegex(ValueError,'exceeds maximum'):
+            verify_constant(t,XML,'tip',.4,.4,limits=LIMITS)
+        with self.assertRaisesRegex(ValueError,'joint limits'):
+            verify_constant(t,XML,'tip',1.2,1.,limits={n:(.0001,.03) for n in LIMITS})
 
     def test_revolute_chain_and_vectorized_speed(self):
         xml='<robot name="r"><link name="base"/><link name="arm"/><link name="tip"/>'+ \

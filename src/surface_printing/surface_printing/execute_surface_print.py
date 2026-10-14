@@ -253,7 +253,7 @@ def run(node):
                                      data['average_cartesian_speed_mm_s'],
                                      node.wrist_bounds,limits)
         node.get_logger().info(
-            f"Verified target-speed coverage: {100*speed_report['coverage_fraction']:.2f}% "
+            f"Planned target-speed coverage (report only): {100*speed_report['coverage_fraction']:.2f}% "
             f"of path within +/-5% of {data['average_cartesian_speed_mm_s']:.3f} mm/s")
         node.speed_tracker=SpeedTracker(
             TCPModel(xml,data['link_name'],list(trajectory.joint_trajectory.joint_names)),
