@@ -29,7 +29,7 @@ def run(node):
     request = GetPositionFK.Request()
     request.header.frame_id = 'world'
     request.fk_link_names = ['probe_tcp']
-    joints = node.fresh_joints()
+    joints = node.stationary_joints()
     required = {f'{name}_joint' for name in
                 ('shoulder_pan','shoulder_lift','elbow','wrist_1','wrist_2','wrist_3')}
     if (not required.issubset(joints.name) or
@@ -79,3 +79,4 @@ def main(args=None):
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
+

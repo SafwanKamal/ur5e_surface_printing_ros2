@@ -6,6 +6,8 @@ from pathlib import Path
 import rclpy
 import yaml
 from action_msgs.msg import GoalStatus
+from action_msgs.srv import CancelGoal
+from controller_manager_msgs.srv import SwitchController, ListControllers
 from moveit_msgs.action import ExecuteTrajectory
 from moveit_msgs.msg import RobotTrajectory
 from rclpy.action import ActionClient
@@ -52,6 +54,12 @@ class PrintNode(WorkNode):
         self.stop=self.create_client(Trigger,'/syringe/stop')
         self.abort_srv=self.create_service(Trigger,'/surface_printing/stop',self.abort)
         self.robot=ActionClient(self,ExecuteTrajectory,'/execute_trajectory')
+        self.controller_cancel=self.create_client(
+            CancelGoal,'/scaled_joint_trajectory_controller/follow_joint_trajectory/_action/cancel_goal')
+        self.controller_switch=self.create_client(
+            SwitchController,'/controller_manager/switch_controller')
+        self.controller_list=self.create_client(
+            ListControllers,'/controller_manager/list_controllers')
 
     def abort(self, request, response):
         self.error='Operator requested stop'
@@ -117,35 +125,71 @@ class PrintNode(WorkNode):
     def cleanup(self):
         self.cleaning=True; self.extruding=False; self.monitoring=False
         self.abort_pending_goal=True
-        # Dispatch both immediately; do not wait on USB before requesting robot cancel.
-        cancel=None; stop=None
+        motion_possible=self.goal_future is not None or self.robot_goal is not None
+        pending=[]
+        # Send independent stop requests before waiting on any one service.
+        if motion_possible:
+            try:
+                if self.robot_goal is not None and self.robot_goal.accepted:
+                    pending.append((self.robot_goal.cancel_goal_async(),'MoveIt cancel'))
+            except Exception as e:
+                self.get_logger().error(f'MoveIt cancel dispatch failed: {e}')
+            if not self.simulation:
+                try:
+                    if self.controller_cancel.service_is_ready():
+                        pending.append((self.controller_cancel.call_async(CancelGoal.Request()),
+                                        'Controller goal cancel'))
+                except Exception as e:
+                    self.get_logger().error(f'Controller cancel dispatch failed: {e}')
+            try:
+                if self.controller_switch.service_is_ready():
+                    request=SwitchController.Request()
+                    request.deactivate_controllers=[
+                        'ur_manipulator_controller' if self.simulation
+                        else 'scaled_joint_trajectory_controller']
+                    request.strictness=2
+                    request.timeout.sec=3
+                    pending.append((self.controller_switch.call_async(request),
+                                    'Controller deactivate'))
+            except Exception as e:
+                self.get_logger().error(f'Controller stop dispatch failed: {e}')
         try:
-            if self.robot_goal is not None and self.robot_goal.accepted:
-                cancel=self.robot_goal.cancel_goal_async()
-        except Exception as e: self.get_logger().error(f'Robot cancel request failed: {e}')
-        try:
-            if self.stop.service_is_ready(): stop=self.stop.call_async(Trigger.Request())
-        except Exception as e: self.get_logger().error(f'Syringe stop request failed: {e}')
-        for future,label in ((stop,'Syringe STOP'),(cancel,'Robot cancel')):
-            if future is None: continue
+            if self.stop.service_is_ready():
+                pending.append((self.stop.call_async(Trigger.Request()),'Syringe STOP'))
+        except Exception as e:
+            self.get_logger().error(f'Syringe stop dispatch failed: {e}')
+        for future,label in pending:
             try:
                 response=self.wait(future,3)
                 if label=='Syringe STOP' and not response.success:
                     raise RuntimeError(response.message)
-                if label=='Robot cancel' and not response.goals_canceling:
-                    self.get_logger().warning('Cancel not accepted; robot may already have finished')
-            except Exception as e: self.get_logger().error(f'{label} unconfirmed: {e}; use physical stop')
-        # Allow a delayed goal acceptance callback to cancel before shutting down.
+                if label=='Controller deactivate' and not response.ok:
+                    self.get_logger().warning('Deactivation rejected; checking actual controller state')
+            except Exception as e:
+                self.get_logger().error(f'{label} unconfirmed: {e}')
+        if motion_possible:
+            controller='ur_manipulator_controller' if self.simulation else 'scaled_joint_trajectory_controller'
+            try:
+                if not self.controller_list.service_is_ready():
+                    raise RuntimeError('Controller status service unavailable')
+                states=self.wait(self.controller_list.call_async(ListControllers.Request()),3)
+                if any(c.name==controller and c.state=='active' for c in states.controller):
+                    raise RuntimeError('Motion controller is still active')
+                self.stationary_joints(timeout=3.0)
+                self.get_logger().info(
+                    'ABORT STOP VERIFIED: motion controller inactive and measured joints stationary. '
+                    'Regenerate/replan; reactivate controller after checking robot state.')
+            except Exception as e:
+                self.get_logger().error(
+                    f'ROBOT STOP NOT VERIFIED: {e}. Use the physical pendant stop; '
+                    'do not regenerate or execute another path while the robot is moving.')
         if self.goal_future is not None and not self.goal_future.done():
             try: self.wait(self.goal_future,3)
             except Exception: self.get_logger().error('Goal acceptance unknown; use physical robot stop')
-        if self.result_future is not None and not self.result_future.done():
-            try: self.wait(self.result_future,3)
-            except Exception: self.get_logger().error('Robot termination unconfirmed; use physical robot stop')
 
 
 def start_matches(node, trajectory, tolerance):
-    msg=node.fresh_joints(); current=dict(zip(msg.name,msg.position))
+    msg=node.stationary_joints(); current=dict(zip(msg.name,msg.position))
     for name,p in zip(trajectory.joint_trajectory.joint_names,
                       trajectory.joint_trajectory.points[0].positions):
         if name not in current or not math.isfinite(current[name]) or abs(current[name]-p)>tolerance:
@@ -325,3 +369,4 @@ def main(args=None):
         node.destroy_node()
         if rclpy.ok(): rclpy.shutdown()
     if code: raise SystemExit(code)
+

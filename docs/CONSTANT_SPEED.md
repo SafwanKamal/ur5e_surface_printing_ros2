@@ -67,14 +67,16 @@ For target-speed plans, effective UR scaling must be within 1% of 100% at
 startup; keep the pendant slider fixed throughout the print.
 
 The executor estimates actual tip translation from the current joint positions
-and live calibrated URDF using roughly 0.1-second timestamped windows.
+and live calibrated URDF using roughly 0.25-second timestamped windows.
 It logs current measured tip speed and accumulated target-band coverage every
 five seconds, then reports measured average, peak and coverage at completion.
 
 It requests cancellation and stops extrusion if measured out-of-band distance
 exceeds 10% of the entire planned distance, because the 90% requirement can no
 longer be met. Measured speed above the maximum plus a 5% measurement allowance
-also aborts. Completion below 90% measured coverage is reported as failure.
+for at least 0.5 seconds also aborts. Isolated windows still count against
+coverage. See [ABORT_RECOVERY.md](ABORT_RECOVERY.md) for controller-level abort
+handling and stationary capture checks. Completion below 90% measured coverage is reported as failure.
 Existing robot, syringe, keepalive and configured-duration checks remain active.
 
 Both spline sampling and finite-difference feedback are estimates, not a

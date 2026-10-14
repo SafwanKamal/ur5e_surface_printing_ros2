@@ -8,13 +8,14 @@ from .constant_speed import TOLERANCE, MIN_COVERAGE
 
 
 class SpeedTracker:
-    def __init__(self,model,names,maximum,target,planned_length_mm,window_sec=.1):
+    def __init__(self,model,names,maximum,target,planned_length_mm,window_sec=.25):
         self.model=model; self.names=list(names)
         self.maximum=maximum; self.target=target
         self.planned_length=planned_length_mm; self.window=window_sec
         self.anchor=None; self.last_stamp=None
         self.length=0.; self.matched=0.; self.peak=0.; self.elapsed=0.
         self.last_speed=0.; self.windows=0
+        self.overspeed_duration=0.
 
     def update(self,joints):
         current=dict(zip(joints.name,joints.position))
@@ -42,8 +43,14 @@ class SpeedTracker:
         if self.target*(1-TOLERANCE)<=speed<=self.target*(1+TOLERANCE):
             self.matched+=distance
         if speed>self.maximum*(1+TOLERANCE):
+            self.overspeed_duration+=dt
+        else:
+            self.overspeed_duration=0.
+        # Isolated spikes still count against coverage but do not prove sustained overspeed.
+        if self.overspeed_duration>=.5:
             raise RuntimeError(f'Measured TCP speed {speed:.3f} mm/s exceeds '
-                               f'maximum {self.maximum:.3f} plus measurement tolerance')
+                               f'maximum {self.maximum:.3f} plus measurement tolerance '
+                               'for at least 0.5 seconds')
         if self.length-self.matched>(1-MIN_COVERAGE)*self.planned_length+1e-6:
             raise RuntimeError('Measured out-of-band travel exceeds 10% of planned path; '
                                '90% target-speed coverage cannot be met')
@@ -54,3 +61,4 @@ class SpeedTracker:
                     measured_average_mm_s=self.length/self.elapsed if self.elapsed else 0.,
                     measured_coverage=self.matched/self.length if self.length else 0.,
                     measurement_windows=self.windows)
+

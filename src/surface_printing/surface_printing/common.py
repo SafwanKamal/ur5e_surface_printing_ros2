@@ -67,6 +67,33 @@ class WorkNode(Node):
 
         return future.result()
 
+    def stationary_joints(self, timeout=5.0, hold_sec=0.5, tolerance_rad=0.00005):
+        """Require fresh observed joints to remain stationary before capture."""
+        deadline=time.monotonic()+timeout
+        samples=[]
+        last_stamp=None
+        while time.monotonic()<deadline:
+            msg=self.fresh_joints()
+            stamp=(msg.header.stamp.sec,msg.header.stamp.nanosec)
+            now=time.monotonic()
+            if stamp!=last_stamp:
+                last_stamp=stamp
+                positions=dict(zip(msg.name,msg.position))
+                if not positions or not all(math.isfinite(v) for v in positions.values()):
+                    raise RuntimeError('Invalid joint state during stop verification')
+                samples.append((now,positions))
+                while len(samples)>2 and now-samples[1][0]>=hold_sec:
+                    samples.pop(0)
+                if now-samples[0][0]>=hold_sec:
+                    names=set(samples[0][1])
+                    if all(set(p)==names for _,p in samples) and all(
+                        max(p[n] for _,p in samples)-min(p[n] for _,p in samples)
+                        <=tolerance_rad for n in names):
+                        return msg
+            rclpy.spin_once(self,timeout_sec=.02)
+        raise RuntimeError('Robot is still moving or stationary feedback is unconfirmed; '
+                           'stop the previous trajectory before capturing/planning again')
+
     def fresh_joints(self):
         deadline = time.monotonic() + 5.0
 
@@ -161,3 +188,4 @@ def validate_trajectory(trajectory):
         )
 
     return previous_time
+

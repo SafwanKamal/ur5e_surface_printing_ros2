@@ -31,7 +31,7 @@ def run(node):
     request.header.frame_id = frame
     request.fk_link_names = [link]
     request.robot_state = RobotState()
-    request.robot_state.joint_state = node.fresh_joints()
+    request.robot_state.joint_state = node.stationary_joints()
     request.robot_state.is_diff = True
     result = node.wait(client.call_async(request))
     if result.error_code.val != 1 or len(result.pose_stamped) != 1:
@@ -64,3 +64,4 @@ def main(args=None):
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
+
