@@ -39,9 +39,9 @@ def generate_launch_description():
 
     driver_launch = PathJoinSubstitution(
         [
-            FindPackageShare("ur_robot_driver"),
+            FindPackageShare("ur5e_probe_moveit_config"),
             "launch",
-            "ur_control.launch.py",
+            "ur_control_independent.launch.py",
         ]
     )
 
