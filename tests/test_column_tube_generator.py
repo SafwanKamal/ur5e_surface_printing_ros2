@@ -36,7 +36,7 @@ class ColumnGeneratorTests(unittest.TestCase):
             pose=NS(position=NS(x=.5,y=.2,z=.01),orientation=NS(x=1.,y=0.,z=0.,w=0.))
             result=NS(error_code=NS(val=1),pose_stamped=[NS(header=NS(frame_id='world'),pose=pose)])
             node=NS(parameter=lambda k,default:params.get(k,default),
-                    create_client=lambda *args:client,stationary_joints=lambda:joints,
+                    create_client=lambda *args:client,fresh_joints=lambda:joints,
                     get_clock=lambda:NS(now=lambda:NS(nanoseconds=100000000000)),
                     wait=lambda future:result,get_logger=lambda:Mock())
             namespace['run'](node)

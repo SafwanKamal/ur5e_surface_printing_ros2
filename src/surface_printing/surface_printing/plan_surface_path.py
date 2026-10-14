@@ -181,7 +181,7 @@ def run(node):
     )
 
     state = RobotState()
-    state.joint_state = node.stationary_joints()
+    state.joint_state = node.fresh_joints()
     state.is_diff = True
     wrist_bounds = load_bounds()
     check_state(state.joint_state, wrist_bounds)

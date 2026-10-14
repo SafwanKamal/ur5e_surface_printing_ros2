@@ -189,7 +189,7 @@ class PrintNode(WorkNode):
 
 
 def start_matches(node, trajectory, tolerance):
-    msg=node.stationary_joints(); current=dict(zip(msg.name,msg.position))
+    msg=node.fresh_joints(); current=dict(zip(msg.name,msg.position))
     for name,p in zip(trajectory.joint_trajectory.joint_names,
                       trajectory.joint_trajectory.points[0].positions):
         if name not in current or not math.isfinite(current[name]) or abs(current[name]-p)>tolerance:

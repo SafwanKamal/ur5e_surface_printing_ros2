@@ -23,9 +23,9 @@ An abort deliberately leaves the motion controller inactive; successful prints
 do not. Check physical robot state before reactivating after a fault. The normal
 automatic startup configuration remains unchanged.
 
-All current-position generators, the planner, and execution start checks now
-require stationary joint feedback. A moving or unconfirmed robot is rejected
-rather than producing a captured start that immediately becomes stale.
+Current-position generators, the planner, and execution start checks use fresh
+joint feedback directly. They do not wait for a stationary-joint observation
+window. The stationary check is retained only for confirming an abort stop.
 No return to an earlier starting position is commanded.
 
 ## Measured-speed estimates
