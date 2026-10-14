@@ -638,7 +638,13 @@ including ramps, `WATCHDOG OFF/ON`, `STATUS`, `STOP` and `ESTOP`.
 
 For repeatability paths, `make_demo_path` also accepts `passes` (default 1)
 and `spacing_mm` (default 1 mm). Sizes down to 0.1 mm are supported, including
-the 2 mm test. A line with `passes:=3` traverses the same segment out, back,
+the 2 mm test. `angle_deg` (default 0) rotates the generated path within its
+selected plane around the captured start; tool orientation is unchanged.
+For a 10 mm line in world XY at +45 degrees, use `shape:=line size_mm:=10.0
+angle_deg:=45.0 plane:=xy direction:=1.0`. Its endpoint is +7.071 mm in both
+world X and Y. With direction -1, that same line extends toward -X/-Y.
+Use plane xz for a diagonal in X/Z rather than a horizontal XY diagonal.
+A line with `passes:=3` traverses the same segment out, back,
 out; it does not create three adjacent lines or an unplanned return move.
 Square/circle passes repeat the closed contour. Square size is side length;
 circle size is diameter. All passes are one CSV line and one robot trajectory.

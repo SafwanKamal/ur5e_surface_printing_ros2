@@ -27,6 +27,15 @@ def demo_offsets(shape, size_mm, spacing_mm=1.0):
     return out
 
 
+def rotate_offsets(offsets, angle_deg):
+    """Rotate planar path coordinates about the captured start, in degrees."""
+    if not math.isfinite(angle_deg):
+        raise ValueError('angle_deg must be finite')
+    angle = math.radians(angle_deg)
+    cosine, sine = math.cos(angle), math.sin(angle)
+    return [(cosine*u-sine*v, sine*u+cosine*v) for u,v in offsets]
+
+
 def repeat_offsets(offsets, passes):
     """Repeat a closed contour, or alternate direction over an open segment."""
     if isinstance(passes, bool) or not isinstance(passes, int) or not 1 <= passes <= 100:

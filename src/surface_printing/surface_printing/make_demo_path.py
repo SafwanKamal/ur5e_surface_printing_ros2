@@ -5,7 +5,7 @@ import rclpy
 from moveit_msgs.msg import RobotState
 from moveit_msgs.srv import GetPositionFK
 from .common import WorkNode
-from .demo_geometry import demo_offsets, repeat_offsets
+from .demo_geometry import demo_offsets, repeat_offsets, rotate_offsets
 
 
 def run(node):
@@ -18,9 +18,10 @@ def run(node):
     sign = float(node.parameter('direction', 1.0))
     passes = node.parameter('passes', 1)
     spacing = float(node.parameter('spacing_mm', 1.0))
+    angle = float(node.parameter('angle_deg', 0.0))
     if plane not in ('xy', 'xz', 'yz') or sign not in (-1., 1.):
         raise ValueError('plane must be xy/xz/yz; direction must be +/-1')
-    offsets = repeat_offsets(demo_offsets(shape, size, spacing), passes)
+    offsets = rotate_offsets(repeat_offsets(demo_offsets(shape, size, spacing), passes), angle)
     fk = node.create_client(GetPositionFK, '/compute_fk')
     if not fk.wait_for_service(timeout_sec=5):
         raise RuntimeError('MoveIt /compute_fk unavailable')
@@ -45,7 +46,7 @@ def run(node):
             p['xyz'.index(plane[0])] += sign*u
             p['xyz'.index(plane[1])] += sign*v
             writer.writerow([0, *p, *q])
-    node.get_logger().info(f'PATH ONLY: {shape}, {size:g} mm, {passes} pass(es) in {frame} {plane}; {output}. '
+    node.get_logger().info(f'PATH ONLY: {shape}, {size:g} mm, {passes} pass(es), angle {angle:g} deg in {frame} {plane}; {output}. '
                            'This captures the present pose; it does not locate a surface.')
 
 

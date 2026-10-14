@@ -4,10 +4,25 @@ import sys
 import unittest
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src/surface_printing'))
-from surface_printing.demo_geometry import demo_offsets, repeat_offsets
+from surface_printing.demo_geometry import demo_offsets, repeat_offsets, rotate_offsets
 
 
 class RepeatabilityGeometry(unittest.TestCase):
+    def test_diagonal_line_preserves_length_and_start(self):
+        for angle in [45, -45, 90, 180]:
+            original=repeat_offsets(demo_offsets('line',10,.25),3)
+            rotated=rotate_offsets(original,angle)
+            self.assertEqual(rotated[0],(0.,0.))
+            self.assertAlmostEqual(sum(math.dist(a,b) for a,b in zip(rotated,rotated[1:])),.03)
+        end=rotate_offsets(demo_offsets('line',10),45)[-1]
+        self.assertAlmostEqual(end[0],.01/math.sqrt(2))
+        self.assertAlmostEqual(end[1],.01/math.sqrt(2))
+        self.assertEqual(rotate_offsets(original,0),original)
+
+    def test_rotation_rejects_nonfinite_angle(self):
+        for angle in [float('nan'),float('inf')]:
+            with self.assertRaises(ValueError): rotate_offsets([(0,0),(1,0)],angle)
+
     def test_three_line_traversals(self):
         for mm in [10, 5, 2]:
             one = demo_offsets('line', mm, .25)
