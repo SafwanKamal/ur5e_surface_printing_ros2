@@ -71,13 +71,13 @@ and live calibrated URDF using roughly 0.25-second timestamped windows.
 It logs current measured tip speed and accumulated target-band coverage every
 five seconds, then reports measured average, peak and coverage at completion.
 
-It requests cancellation and stops extrusion if measured out-of-band distance
-exceeds 10% of the entire planned distance, because the 90% requirement can no
-longer be met. Measured speed above the maximum plus a 5% measurement allowance
-for at least 0.5 seconds also aborts. Isolated windows still count against
-coverage. See [ABORT_RECOVERY.md](ABORT_RECOVERY.md) for controller-level abort
-handling and stationary capture checks. Completion below 90% measured coverage is reported as failure.
-Existing robot, syringe, keepalive and configured-duration checks remain active.
+Measured speed is report-only. Neither overspeed readings nor low measured
+target-band coverage cancel execution or turn successful completion into failure.
+The executor logs average, peak and coverage and emits summary warnings if needed.
+The planner and the executor's pre-motion trajectory validation still enforce
+the maximum and 90% target coverage on the commanded plan.
+Existing robot, syringe, keepalive, feedback and configured-duration checks
+remain active. See [ABORT_RECOVERY.md](ABORT_RECOVERY.md) for stop verification.
 
 Both spline sampling and finite-difference feedback are estimates, not a
 continuous-time bound or safety-rated physical speed guarantee. Live speed
@@ -94,6 +94,6 @@ Regenerate and replan to obtain the new timing and measured coverage behavior.
 Tests cover line and helix timing, nonuniform sample spacing, a revolute chain,
 equal maximum/target settings, infeasible joint limits, corner-heavy short paths,
 tampered timing, rest endpoints, geometry preservation, vectorized Jacobian
-agreement, measured overspeed, insufficient live coverage, repeated timestamps
+agreement, report-only overspeed and low measured coverage, repeated timestamps
 and clock reversal. Existing TCP speed, Cartesian timing and executor tests
 are also run. No robot or ROS transport is available in the development container.

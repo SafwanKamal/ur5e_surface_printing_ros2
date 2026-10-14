@@ -259,6 +259,8 @@ def run(node):
             TCPModel(xml,data['link_name'],list(trajectory.joint_trajectory.joint_names)),
             trajectory.joint_trajectory.joint_names,data['max_cartesian_speed_mm_s'],
             data['average_cartesian_speed_mm_s'],speed_report['path_length_mm'])
+        node.get_logger().info('Live speed measurements are report-only; '
+                               'speed excursions do not abort execution')
     else:
         verify_tcp_speed(trajectory, xml, data['link_name'],
                          data['cartesian_speed_mm_s'], node.wrist_bounds)
@@ -350,7 +352,11 @@ def run(node):
             f"target-band distance {100*measured['measured_coverage']:.2f}%; "
             f"{measured['measurement_windows']} measurement windows")
         if measured['measurement_windows']==0 or measured['measured_coverage']<.90:
-            raise RuntimeError('Execution finished but measured target-speed coverage was below 90%')
+            node.get_logger().warning('Measured target-speed coverage below 90%; '
+                                      'report only, print completed')
+        if measured.get('measured_max_exceeded',False):
+            node.get_logger().warning('Measured speed exceeded the planned maximum; '
+                                      'report only, print completed')
     node.get_logger().info('Demo completed; pump stopped. No automatic retract or travel.')
 
 

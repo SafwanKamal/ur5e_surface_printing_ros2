@@ -31,15 +31,10 @@ No return to an earlier starting position is commanded.
 ## Measured-speed estimates
 
 The planned speed ceiling and 90% target-band coverage checks are unchanged.
-Live finite-difference TCP estimates use 0.25-second windows. Excess measured
-speed must persist for at least 0.5 seconds before triggering an overspeed abort.
-Isolated high windows still count against the target-band distance requirement.
-This distinguishes a short excursion from sustained excess speed; it does not
-establish that any particular excursion was sensor noise.
-
-The measured-speed guard retains its existing 5% measurement allowance.
-Sustained excess speed or more than 10% out-of-band planned travel still aborts.
-Actual tracking must be verified on the lab robot.
+Live finite-difference TCP estimates use 0.25-second windows and are report-only.
+Measured excess speed and insufficient measured coverage do not trigger aborts.
+They are logged for diagnosis and material-quality assessment.
+Feedback validity and the unrelated robot/syringe fault checks remain active.
 
 ## Recovery
 
@@ -68,7 +63,7 @@ extrude=false to verify live speed tracking before depositing material.
 
 Tests reproduce a MoveIt cancellation timeout, independent controller-stop
 dispatch, rejection of unconfirmed stationary feedback, and no controller
-deactivation when this executor has not submitted motion. They also distinguish
-isolated speed spikes from sustained excess speed. Existing timing, executor,
+deactivation when this executor has not submitted motion. They also verify that
+isolated and sustained speed readings remain report-only. Existing timing, executor,
 geometry and generator checks are run. Real ROS transport and physical stopping
 behavior have not been tested in the development container.

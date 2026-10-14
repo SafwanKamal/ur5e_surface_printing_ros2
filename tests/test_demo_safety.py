@@ -197,6 +197,24 @@ class DemoSafety(unittest.TestCase):
             n.flow.call_async.assert_not_called()
             self.assertEqual(n.stop.call_async.call_count,2)
             self.assertFalse(n.extruding)
+            # Completed motion remains successful even when measured speed
+            # exceeds maximum or target coverage is low: telemetry is report-only.
+            namespace.update(
+                configured_limits=lambda *a: {'a':(.1,.1)},
+                verify_constant=lambda *a: dict(coverage_fraction=.99,path_length_mm=100.),
+                TCPModel=lambda *a:object(),
+                SpeedTracker=lambda *a:NS(report=lambda:dict(
+                    measured_average_mm_s=.8,measured_peak_mm_s=2.,
+                    measured_coverage=.1,measurement_windows=20,
+                    measured_max_exceeded=True)))
+            saved=yaml.safe_load(plan.read_text())
+            saved.update(average_cartesian_speed_mm_s=.6,max_cartesian_speed_mm_s=.7,
+                         velocity_scale=.03,acceleration_scale=.03)
+            plan.write_text(yaml.safe_dump(saved))
+            logger=Mock();n.get_logger=lambda:logger
+            run(n)
+            self.assertGreaterEqual(logger.warning.call_count,2)
+            self.assertFalse(n.extruding)
             n.robot.send_goal_async.reset_mock()
             n.stop.call_async.return_value=NS(success=True,
                 message='STOP acknowledged; fault remains latched: Invalid firmware step count')

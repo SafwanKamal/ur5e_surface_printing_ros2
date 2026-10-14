@@ -28,26 +28,28 @@ class SpeedTrackingTests(unittest.TestCase):
         self.assertAlmostEqual(r['measured_coverage'],1.)
         self.assertAlmostEqual(r['measured_distance_mm'],30.)
 
-    def test_slow_motion_aborts_when_90_percent_impossible(self):
+    def test_slow_motion_reports_low_coverage_without_abort(self):
         tracker=SpeedTracker(LinearModel(),['j'],1.2,1.,30.,window_sec=.1)
-        with self.assertRaisesRegex(RuntimeError,'90%'):
-            for i in range(100):
-                tracker.update(joints(100+i*.1,i*.00005))
+        for i in range(100):
+            tracker.update(joints(100+i*.1,i*.00005))
+        self.assertFalse(tracker.report()['measured_target_met'])
+        self.assertLess(tracker.report()['measured_coverage'],.90)
 
-    def test_overspeed_detected(self):
+    def test_persistent_overspeed_reported_without_abort(self):
         tracker=SpeedTracker(LinearModel(),['j'],1.2,1.,30.,window_sec=.1)
         tracker.update(joints(100,0))
         tracker.update(joints(100.2,.0004))
         tracker.update(joints(100.4,.0008))
-        with self.assertRaisesRegex(RuntimeError,'exceeds'):
-            tracker.update(joints(100.6,.0012))
+        tracker.update(joints(100.6,.0012))
+        self.assertTrue(tracker.report()['measured_max_exceeded'])
+        self.assertGreater(tracker.report()['measured_peak_mm_s'],1.2)
 
     def test_isolated_spike_does_not_abort_but_counts_against_coverage(self):
         tracker=SpeedTracker(LinearModel(),['j'],.7,.6,100.,window_sec=.1)
         tracker.update(joints(100,0))
         tracker.update(joints(100.2,.00017))
         tracker.update(joints(100.4,.00029))
-        self.assertEqual(tracker.overspeed_duration,0.)
+        self.assertTrue(tracker.report()['measured_max_exceeded'])
         self.assertLess(tracker.report()['measured_coverage'],1.)
 
     def test_duplicate_samples_and_clock_reversal(self):

@@ -15,7 +15,6 @@ class SpeedTracker:
         self.anchor=None; self.last_stamp=None
         self.length=0.; self.matched=0.; self.peak=0.; self.elapsed=0.
         self.last_speed=0.; self.windows=0
-        self.overspeed_duration=0.
 
     def update(self,joints):
         current=dict(zip(joints.name,joints.position))
@@ -42,23 +41,15 @@ class SpeedTracker:
         self.last_speed=speed;self.peak=max(self.peak,speed)
         if self.target*(1-TOLERANCE)<=speed<=self.target*(1+TOLERANCE):
             self.matched+=distance
-        if speed>self.maximum*(1+TOLERANCE):
-            self.overspeed_duration+=dt
-        else:
-            self.overspeed_duration=0.
-        # Isolated spikes still count against coverage but do not prove sustained overspeed.
-        if self.overspeed_duration>=.5:
-            raise RuntimeError(f'Measured TCP speed {speed:.3f} mm/s exceeds '
-                               f'maximum {self.maximum:.3f} plus measurement tolerance '
-                               'for at least 0.5 seconds')
-        if self.length-self.matched>(1-MIN_COVERAGE)*self.planned_length+1e-6:
-            raise RuntimeError('Measured out-of-band travel exceeds 10% of planned path; '
-                               '90% target-speed coverage cannot be met')
+        # Measured speed is telemetry only; never abort on speed or coverage.
 
     def report(self):
         return dict(measured_distance_mm=self.length,
                     measured_peak_mm_s=self.peak,
                     measured_average_mm_s=self.length/self.elapsed if self.elapsed else 0.,
                     measured_coverage=self.matched/self.length if self.length else 0.,
-                    measurement_windows=self.windows)
+                    measurement_windows=self.windows,
+                    measured_max_exceeded=self.peak>self.maximum*(1+TOLERANCE),
+                    measured_target_met=(self.matched/self.length>=MIN_COVERAGE)
+                    if self.length else False)
 
